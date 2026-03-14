@@ -105,7 +105,7 @@ def search(query, source=None, limit=10):
 def main():
     parser = argparse.ArgumentParser(
         description="Search indexed skill outputs using full-text search.",
-        epilog="Example: ctx_search.py 'high IV options' --source alpaca-trader",
+        epilog="Example: ctx_search.py 'error rate spike' --source my-api",
     )
     parser.add_argument("query", help="Search query (supports FTS5 syntax)")
     parser.add_argument("--source", help="Filter by skill name or 'last-run'")

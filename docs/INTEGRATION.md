@@ -52,14 +52,14 @@ Instead of calling skill scripts directly, wrap them with `ctx_run.py`:
 ### Direct call (full output enters context)
 
 ```bash
-python3 ~/.openclaw/workspace/skills/alpaca-trader/scripts/alpaca_cli.py account
+python3 ~/.openclaw/workspace/skills/my-api/scripts/my_cli.py dashboard
 # Returns: 3 KB JSON (all 40+ fields)
 ```
 
 ### Wrapped call (filtered output enters context)
 
 ```bash
-python3 scripts/ctx_run.py --skill alpaca-trader --cmd "account" --intent "check balance"
+python3 scripts/ctx_run.py --skill my-api --cmd "dashboard" --intent "check error rate"
 # Returns: 120 B JSON (3 relevant fields)
 ```
 
@@ -70,15 +70,15 @@ Update your skill's SKILL.md to recommend Context Saver for data-heavy operation
 ```markdown
 ## Commands
 
-### Account Info
-```bash
+### Dashboard
+\`\`\`bash
 # Full output (use when you need all fields)
-python3 scripts/alpaca_cli.py account
+python3 scripts/my_cli.py dashboard
 
 # Token-saving (recommended for routine checks)
 python3 ~/.openclaw/workspace/skills/context-saver/scripts/ctx_run.py \
-  --skill alpaca-trader --cmd "account" --intent "check balance"
-```
+  --skill my-api --cmd "dashboard" --intent "check status"
+\`\`\`
 ```
 
 ## Setting Up Session Tracking Hooks
@@ -88,23 +88,23 @@ python3 ~/.openclaw/workspace/skills/context-saver/scripts/ctx_run.py \
 Log significant events as they happen:
 
 ```bash
-# After executing a trade
+# After executing a critical action
 python3 scripts/ctx_session.py log \
-  --type "trade" \
+  --type "action" \
   --priority critical \
-  --data '{"action":"buy","symbol":"AAPL","qty":100,"price":"225.50"}'
+  --data '{"operation":"deploy","service":"api-v2","version":"2.1.0"}'
 
 # After an alert triggers
 python3 scripts/ctx_session.py log \
   --type "alert" \
   --priority high \
-  --data '{"symbol":"TSLA","condition":"price_below","threshold":"180.00"}'
+  --data '{"service":"cache-layer","condition":"memory_above","threshold":"90%"}'
 
 # After analysis completes
 python3 scripts/ctx_session.py log \
   --type "analysis" \
   --priority medium \
-  --data '{"result":"bullish","confidence":"0.75","timeframe":"1W"}'
+  --data '{"result":"stable","anomalies":0,"timeframe":"24h"}'
 ```
 
 ### Automated Event Logging in Skill Scripts
@@ -127,14 +127,13 @@ def log_event(event_type, priority, data):
         "--data", json.dumps(data),
     ], capture_output=True)
 
-# In your trade execution function:
-def execute_trade(symbol, qty, side):
-    result = alpaca_api.submit_order(symbol=symbol, qty=qty, side=side)
-    log_event("trade", "critical", {
-        "action": side,
-        "symbol": symbol,
-        "qty": qty,
-        "order_id": result["id"],
+# In your action execution function:
+def execute_action(operation, target):
+    result = api.perform(operation=operation, target=target)
+    log_event("action", "critical", {
+        "operation": operation,
+        "target": target,
+        "result_id": result["id"],
     })
     return result
 ```
@@ -149,16 +148,16 @@ OpenClaw's HEARTBEAT.md system can trigger context snapshots before compaction.
 ## Pre-Compaction Hook
 
 Before conversation compaction, run:
-```bash
+\`\`\`bash
 python3 ~/.openclaw/workspace/skills/context-saver/scripts/ctx_session.py snapshot
-```
+\`\`\`
 
 ## Post-Compaction Hook
 
 After conversation resumes, run:
-```bash
+\`\`\`bash
 python3 ~/.openclaw/workspace/skills/context-saver/scripts/ctx_session.py restore
-```
+\`\`\`
 ```
 
 ### Automatic Snapshot Trigger
@@ -187,19 +186,19 @@ Transform workflow-engine pipelines to use Context Saver's batch execution.
 
 ```json
 {
-  "name": "morning-brief",
+  "name": "daily-status",
   "steps": [
     {
-      "id": "get_account",
-      "skill": "alpaca-trader",
-      "command": "python3 scripts/alpaca_cli.py account",
-      "output": "$account"
+      "id": "get_dashboard",
+      "skill": "my-api",
+      "command": "python3 scripts/my_cli.py dashboard",
+      "output": "$dashboard"
     },
     {
-      "id": "get_positions",
-      "skill": "alpaca-trader",
-      "command": "python3 scripts/alpaca_cli.py positions",
-      "output": "$positions"
+      "id": "get_services",
+      "skill": "my-api",
+      "command": "python3 scripts/my_cli.py list-services",
+      "output": "$services"
     }
   ]
 }
@@ -209,17 +208,17 @@ Transform workflow-engine pipelines to use Context Saver's batch execution.
 
 ```json
 {
-  "name": "morning-brief-ctx",
-  "description": "Morning brief with context-saving batch execution",
+  "name": "daily-status-ctx",
+  "description": "Daily status with context-saving batch execution",
   "steps": [
     {
       "id": "batch_data",
       "skill": "context-saver",
       "cmd": "batch",
       "commands": [
-        {"skill": "alpaca-trader", "cmd": "account", "fields": ["equity", "buying_power", "day_pnl"]},
-        {"skill": "alpaca-trader", "cmd": "positions", "intent": "summary with PnL"},
-        {"skill": "alpaca-trader", "cmd": "movers", "intent": "top 5 by volume"}
+        {"skill": "my-api", "cmd": "dashboard", "fields": ["active_users", "error_rate", "uptime"]},
+        {"skill": "my-api", "cmd": "list-services", "intent": "summary with status"},
+        {"skill": "health-monitor", "cmd": "check", "intent": "failures only"}
       ]
     }
   ]
@@ -243,7 +242,7 @@ Use Context Saver for data-heavy steps and direct execution for lightweight ones
       "id": "notify",
       "comment": "Lightweight -- direct execution is fine",
       "skill": "notification-router",
-      "command": "python3 scripts/notify.py send --to user --subject 'Brief'"
+      "command": "python3 scripts/notify.py send --to user --subject 'Status Report'"
     }
   ]
 }

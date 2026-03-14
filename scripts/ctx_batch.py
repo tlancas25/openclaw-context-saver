@@ -66,8 +66,8 @@ def main():
     parser = argparse.ArgumentParser(
         description="Execute multiple OpenClaw skill commands in a single batch call.",
         epilog=(
-            "Example: ctx_batch.py --commands '[{\"skill\": \"alpaca-trader\", "
-            "\"cmd\": \"account\", \"fields\": [\"equity\",\"buying_power\"]}]'"
+            "Example: ctx_batch.py --commands '[{\"skill\": \"my-api\", "
+            "\"cmd\": \"dashboard\", \"fields\": [\"active_users\",\"error_rate\"]}]'"
         ),
     )
     parser.add_argument(

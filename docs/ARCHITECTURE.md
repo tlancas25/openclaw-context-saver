@@ -11,28 +11,28 @@ Context Saver is a three-layer token optimization system for OpenClaw. It sits b
 The sandbox runner (`ctx_run.py`) executes skill commands in subprocesses. The full output is captured but never returned directly to the context window.
 
 ```
-┌──────────────────────────────────────────┐
-│           Claude Context Window           │
-│                                          │
-│  Input:  "What's my buying power?"       │
-│  Output: {"buying_power": "45231.50"}    │  ← 35 bytes
-│                                          │
-└──────────────────┬───────────────────────┘
-                   │
-            ┌──────┴──────┐
-            │  ctx_run.py │
-            │  (sandbox)  │
-            └──────┬──────┘
-                   │
-            ┌──────┴──────┐
-            │ alpaca_cli  │
-            │  account    │
-            └──────┬──────┘
-                   │
-            ┌──────┴──────┐
-            │  3,072 B    │  ← Full response (never enters context)
-            │  raw JSON   │
-            └─────────────┘
++------------------------------------------+
+|           Claude Context Window           |
+|                                          |
+|  Input:  "How many active users?"        |
+|  Output: {"active_users": "12543"}       |  <- 30 bytes
+|                                          |
++------------------+-----------------------+
+                   |
+            +------+------+
+            |  ctx_run.py |
+            |  (sandbox)  |
+            +------+------+
+                   |
+            +------+------+
+            | my_api_cli  |
+            |  dashboard  |
+            +------+------+
+                   |
+            +------+------+
+            |  3,072 B    |  <- Full response (never enters context)
+            |  raw JSON   |
+            +-------------+
 ```
 
 **How it works:**
@@ -53,8 +53,8 @@ The intent filter reduces captured output to only the fields relevant to the use
 
 | Mode | Trigger | Mechanism |
 |------|---------|-----------|
-| Field selection | `--fields "equity,buying_power"` | Direct key extraction |
-| Intent filtering | `--intent "find losing positions"` | Keyword scoring |
+| Field selection | `--fields "active_users,error_rate"` | Direct key extraction |
+| Intent filtering | `--intent "find failing services"` | Keyword scoring |
 | Default | Neither flag | Scalar fields only |
 
 **Intent-driven filtering algorithm:**
@@ -67,8 +67,8 @@ For each field/item in data:
     If keyword matches field value: score += 1
 
   Special handlers:
-    "losing/loss" intent → boost items where PnL < 0 (score += 5)
-    "top/best" intent → boost items by absolute change value
+    "losing/loss" intent -> boost items where PnL < 0 (score += 5)
+    "top/best" intent -> boost items by absolute change value
 
 Sort by score descending
 Return top N items (N extracted from intent or default 5/10)
@@ -81,20 +81,20 @@ This is deliberately simple. No ML, no embeddings, no external dependencies. Fas
 The session tracker (`ctx_session.py`) maintains an event log that survives conversation compaction.
 
 ```
-┌─────────────────────────────────────────┐
-│          Conversation Lifecycle          │
-│                                         │
-│  Start → Events accumulate → Compaction │
-│                    │              │      │
-│                    ▼              ▼      │
-│              ┌─────────┐  ┌──────────┐  │
-│              │ events   │  │ snapshot │  │
-│              │ table    │→ │ 2 KB     │  │
-│              │ (SQLite) │  │ budget   │  │
-│              └─────────┘  └────┬─────┘  │
-│                                │        │
-│  Resume ← Restore snapshot ←──┘        │
-└─────────────────────────────────────────┘
++-----------------------------------------+
+|          Conversation Lifecycle          |
+|                                         |
+|  Start -> Events accumulate -> Compact  |
+|                    |              |      |
+|                    v              v      |
+|              +---------+  +----------+  |
+|              | events   |  | snapshot |  |
+|              | table    |-> | 2 KB    |  |
+|              | (SQLite) |  | budget   |  |
+|              +---------+  +----+-----+  |
+|                                |        |
+|  Resume <- Restore snapshot <--+        |
++-----------------------------------------+
 ```
 
 ## SQLite Schemas
@@ -107,9 +107,9 @@ The session tracker (`ctx_session.py`) maintains an event log that survives conv
 CREATE TABLE runs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     timestamp TEXT NOT NULL,         -- ISO 8601 UTC
-    skill TEXT NOT NULL,             -- e.g., "alpaca-trader"
-    command TEXT NOT NULL,           -- e.g., "account"
-    intent TEXT,                     -- e.g., "check balance" (nullable)
+    skill TEXT NOT NULL,             -- e.g., "my-api"
+    command TEXT NOT NULL,           -- e.g., "dashboard"
+    intent TEXT,                     -- e.g., "check error rate" (nullable)
     raw_bytes INTEGER NOT NULL,      -- Size of full output
     summary_bytes INTEGER NOT NULL,  -- Size of filtered summary
     savings_pct REAL NOT NULL        -- Compression percentage
@@ -136,7 +136,7 @@ CREATE TABLE events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     timestamp TEXT NOT NULL,
     session_id TEXT NOT NULL,
-    event_type TEXT NOT NULL,       -- e.g., "trade", "alert", "decision"
+    event_type TEXT NOT NULL,       -- e.g., "action", "alert", "decision"
     priority TEXT NOT NULL,          -- critical, high, medium, low
     priority_level INTEGER NOT NULL, -- 1-4 (for sorting)
     data TEXT NOT NULL,              -- JSON payload
@@ -164,7 +164,7 @@ SQLite FTS5 (Full-Text Search 5) provides fast, ranked text search without exter
 
 1. Every `ctx_run.py` execution indexes the full raw output
 2. Content is tokenized by FTS5's default tokenizer (unicode61)
-3. Queries use FTS5 match syntax: `"high IV" AND puts`
+3. Queries use FTS5 match syntax: `"error rate" AND spike`
 4. Results are ranked by BM25 (built into FTS5)
 5. `ctx_search.py` provides the query interface
 
@@ -180,14 +180,14 @@ The snapshot builder operates within a strict 2 KB budget (configurable via `CTX
 
 ```
 Total Budget: 2,048 bytes
-├── P1 Critical (40%): 819 bytes
-│   └── Trades, stop losses, system alerts
-├── P2 High (30%):     614 bytes
-│   └── Price alerts, large PnL changes
-├── P3 Medium (20%):   410 bytes
-│   └── Analysis results, routine checks
-└── P4 Low (10%):      205 bytes
-    └── Informational queries, minor updates
++-- P1 Critical (40%): 819 bytes
+|   +-- Deployments, system alerts, critical actions
++-- P2 High (30%):     614 bytes
+|   +-- Config changes, threshold breaches
++-- P3 Medium (20%):   410 bytes
+|   +-- Analysis results, routine checks
++-- P4 Low (10%):      205 bytes
+    +-- Informational queries, minor updates
 ```
 
 **Allocation algorithm:**
@@ -204,9 +204,9 @@ This ensures that even in a busy session with hundreds of events, the snapshot n
 
 | Priority | Level | Label | Budget | Retention | Examples |
 |----------|-------|-------|--------|-----------|----------|
-| Critical | 1 | P1 | 40% | Always kept | Trades executed, stop losses triggered, system errors |
-| High | 2 | P2 | 30% | Kept if space | Price alerts, large PnL swings, position changes |
-| Medium | 3 | P3 | 20% | Best effort | Analysis results, market summaries, routine checks |
+| Critical | 1 | P1 | 40% | Always kept | Deployments, system errors, critical actions |
+| High | 2 | P2 | 30% | Kept if space | Config changes, threshold breaches, alerts |
+| Medium | 3 | P3 | 20% | Best effort | Analysis results, summaries, routine checks |
 | Low | 4 | P4 | 10% | Space permitting | Info queries, status checks, minor updates |
 
 ## Data Flow
@@ -215,27 +215,27 @@ This ensures that even in a busy session with hundreds of events, the snapshot n
 
 ```
 User asks question
-       │
-       ▼
+       |
+       v
 Claude invokes ctx_run.py
-       │
-       ├──→ Load .env variables
-       ├──→ Locate skill script
-       ├──→ subprocess.run(skill_cmd)
-       │         │
-       │         ▼
-       │    Raw output (3-50 KB)
-       │         │
-       │         ├──→ Index in FTS5
-       │         │
-       │         ├──→ Apply filter (intent/fields/default)
-       │         │         │
-       │         │         ▼
-       │         │    Filtered summary (100-500 B)
-       │         │
-       │         └──→ Record stats (runs table)
-       │
-       ▼
+       |
+       +-->  Load .env variables
+       +-->  Locate skill script
+       +-->  subprocess.run(skill_cmd)
+       |         |
+       |         v
+       |    Raw output (3-50 KB)
+       |         |
+       |         +-->  Index in FTS5
+       |         |
+       |         +-->  Apply filter (intent/fields/default)
+       |         |         |
+       |         |         v
+       |         |    Filtered summary (100-500 B)
+       |         |
+       |         +-->  Record stats (runs table)
+       |
+       v
 Return JSON to Claude context
   {success, summary, bytes_saved, savings_pct}
 ```
@@ -244,15 +244,15 @@ Return JSON to Claude context
 
 ```
 Claude invokes ctx_batch.py
-       │
-       ├──→ Parse command specs (JSON array)
-       │
-       ├──→ For each spec:
-       │       └──→ subprocess.run(ctx_run.py ...)
-       │                 │
-       │                 └──→ (Single command flow above)
-       │
-       ▼
+       |
+       +-->  Parse command specs (JSON array)
+       |
+       +-->  For each spec:
+       |       +-->  subprocess.run(ctx_run.py ...)
+       |                 |
+       |                 +-->  (Single command flow above)
+       |
+       v
 Return combined JSON
   {commands_run, total_bytes_saved, results[]}
 ```
@@ -261,20 +261,20 @@ Return combined JSON
 
 ```
 Session Start
-       │
-       ├──→ Generate session_id (YYYYMMDD-HHMMSS)
-       │
-       ├──→ Events logged throughout session
-       │       ctx_session.py log --type X --priority Y --data Z
-       │
-       ├──→ Before compaction:
-       │       ctx_session.py snapshot
-       │       (builds 2 KB snapshot from events)
-       │
-       ├──→ After compaction:
-       │       ctx_session.py restore
-       │       (loads most recent snapshot into context)
-       │
-       └──→ Stats available:
+       |
+       +-->  Generate session_id (YYYYMMDD-HHMMSS)
+       |
+       +-->  Events logged throughout session
+       |       ctx_session.py log --type X --priority Y --data Z
+       |
+       +-->  Before compaction:
+       |       ctx_session.py snapshot
+       |       (builds 2 KB snapshot from events)
+       |
+       +-->  After compaction:
+       |       ctx_session.py restore
+       |       (loads most recent snapshot into context)
+       |
+       +-->  Stats available:
                ctx_session.py stats
 ```

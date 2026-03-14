@@ -1,6 +1,6 @@
 {
-  "name": "eod-analysis-ctx",
-  "description": "End-of-day market analysis using context-saver batch execution. Consolidates account, positions, orders, and movers into a single filtered response.",
+  "name": "eod-report-ctx",
+  "description": "End-of-day report using context-saver batch execution. Consolidates dashboard, services, events, and metrics into a single filtered response.",
   "version": "1.0.0",
   "timeout": 600,
   "steps": [
@@ -10,24 +10,24 @@
       "command": "python3 scripts/ctx_batch.py",
       "commands": [
         {
-          "skill": "alpaca-trader",
-          "cmd": "account",
-          "fields": ["equity", "buying_power", "day_pnl", "portfolio_value", "cash"]
+          "skill": "my-api",
+          "cmd": "dashboard",
+          "fields": ["active_users", "error_rate", "uptime", "requests_24h", "latency_p99"]
         },
         {
-          "skill": "alpaca-trader",
-          "cmd": "positions",
-          "intent": "all positions with PnL and daily change"
+          "skill": "my-api",
+          "cmd": "list-services",
+          "intent": "all services with status and health"
         },
         {
-          "skill": "alpaca-trader",
-          "cmd": "orders",
-          "intent": "today's filled orders"
+          "skill": "my-api",
+          "cmd": "recent-events",
+          "intent": "today's critical events"
         },
         {
-          "skill": "alpaca-trader",
-          "cmd": "movers",
-          "intent": "top 10 by absolute change"
+          "skill": "analytics-engine",
+          "cmd": "metrics",
+          "intent": "top 10 by request volume"
         }
       ],
       "output": "$eod_data"
@@ -35,7 +35,7 @@
     {
       "id": "log_eod",
       "skill": "context-saver",
-      "command": "python3 scripts/ctx_session.py log --type eod_analysis --priority high --data '{\"type\": \"eod\", \"completed\": true}'",
+      "command": "python3 scripts/ctx_session.py log --type eod_report --priority high --data '{\"type\": \"eod\", \"completed\": true}'",
       "depends_on": ["batch_eod_data"]
     },
     {
@@ -48,7 +48,7 @@
     {
       "id": "deliver_notification",
       "skill": "notification-router",
-      "command": "python3 scripts/notify.py send --to user --priority high --subject 'EOD Analysis' --body 'See pipeline output'",
+      "command": "python3 scripts/notify.py send --to user --priority high --subject 'EOD Report' --body 'See pipeline output'",
       "depends_on": ["batch_eod_data"]
     }
   ]

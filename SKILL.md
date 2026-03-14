@@ -22,27 +22,27 @@ Instead of dumping raw API responses (3-50 KB) into context, Context Saver:
 ### Sandboxed Skill Execution
 ```bash
 # Run any skill command with automatic summarization
-python3 scripts/ctx_run.py --skill alpaca-trader --cmd "account" [--intent "check balance"]
-python3 scripts/ctx_run.py --skill alpaca-trader --cmd "positions" [--intent "find losing positions"]
-python3 scripts/ctx_run.py --skill alpaca-trader --cmd "chain AAPL" --intent "high IV puts expiring this week"
+python3 scripts/ctx_run.py --skill my-api --cmd "dashboard" [--intent "check error rate"]
+python3 scripts/ctx_run.py --skill my-api --cmd "list-items" [--intent "find failures"]
+python3 scripts/ctx_run.py --skill my-api --cmd "search users" --intent "inactive accounts over 90 days"
 
 # Run with explicit summary fields
-python3 scripts/ctx_run.py --skill alpaca-trader --cmd "account" --fields "equity,buying_power,day_pnl"
+python3 scripts/ctx_run.py --skill my-api --cmd "dashboard" --fields "active_users,error_rate,uptime"
 ```
 
 ### Batch Execution (Multiple Skills in One Call)
 ```bash
 python3 scripts/ctx_batch.py --commands '[
-  {"skill": "alpaca-trader", "cmd": "account", "fields": ["equity","buying_power"]},
-  {"skill": "alpaca-trader", "cmd": "positions", "intent": "summary"},
-  {"skill": "alpaca-trader", "cmd": "movers", "intent": "top 5"}
+  {"skill": "my-api", "cmd": "dashboard", "fields": ["active_users","error_rate"]},
+  {"skill": "analytics-engine", "cmd": "metrics", "intent": "summary"},
+  {"skill": "health-monitor", "cmd": "check", "intent": "failures only"}
 ]'
 ```
 
 ### Session Event Tracking
 ```bash
 # Log a session event
-python3 scripts/ctx_session.py log --type "trade" --priority critical --data '{"action":"buy","symbol":"AAPL","qty":100}'
+python3 scripts/ctx_session.py log --type "action" --priority critical --data '{"operation":"deploy","service":"api-v2"}'
 
 # Build compaction snapshot (called before conversation compacts)
 python3 scripts/ctx_session.py snapshot
@@ -56,8 +56,8 @@ python3 scripts/ctx_session.py stats
 
 ### Context Search (Query Indexed Data)
 ```bash
-python3 scripts/ctx_search.py "high IV options" [--source alpaca-trader]
-python3 scripts/ctx_search.py "losing positions" --source last-run
+python3 scripts/ctx_search.py "error rate spike" [--source my-api]
+python3 scripts/ctx_search.py "failed deployments" --source last-run
 ```
 
 ### Context Stats
@@ -70,15 +70,15 @@ python3 scripts/ctx_stats.py
 
 | Operation | Without Context Saver | With Context Saver | Savings |
 |-----------|----------------------|-------------------|---------|
-| Account summary | 3 KB JSON | 120 B summary | 96% |
-| Positions (8 stocks) | 5 KB JSON | 300 B summary | 94% |
-| Options chain (AAPL) | 20-50 KB | 500 B filtered | 97% |
-| Morning brief pipeline | 23 KB (4 calls) | 2 KB (1 batch) | 91% |
+| Dashboard summary | 3 KB JSON | 120 B summary | 96% |
+| List items (50 records) | 5 KB JSON | 300 B summary | 94% |
+| Search results (200 hits) | 20-50 KB | 500 B filtered | 97% |
+| Multi-skill pipeline | 23 KB (4 calls) | 2 KB (1 batch) | 91% |
 | Session cold start | 20 KB workspace files | 2 KB snapshot | 90% |
 
 ## When to Use
-- Any data-heavy skill command (trading, analytics, search)
-- Multi-step pipelines (morning briefs, EOD analysis)
+- Any data-heavy skill command (APIs, analytics, search)
+- Multi-step pipelines (daily reports, status checks)
 - Session resumption after compaction
 - When context window is running low
 - Don't use for small operations (<500 bytes output)

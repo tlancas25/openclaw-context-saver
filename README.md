@@ -4,11 +4,11 @@
 
 ## The Problem
 
-Multi-agent systems like OpenClaw orchestrate dozens of skills -- trading APIs, analytics engines, search tools, notification routers. Each skill call can return 3-50 KB of raw JSON. In a typical day of operation, an OpenClaw instance consumes **750K+ tokens** just feeding API responses into the context window.
+Multi-agent systems like OpenClaw orchestrate dozens of skills -- APIs, analytics engines, search tools, notification routers. Each skill call can return 3-50 KB of raw JSON. In a typical day of operation, an OpenClaw instance consumes **750K+ tokens** just feeding API responses into the context window.
 
-Most of that data is noise. When you ask "what's my buying power?", the full account response includes 40+ fields. You needed one. The other 39 fields consumed tokens for nothing.
+Most of that data is noise. When you ask "how many active users?", the full API response includes 40+ fields. You needed one. The other 39 fields consumed tokens for nothing.
 
-Multiply this across positions, options chains, order history, market movers, and session resumptions, and you have a system that spends more tokens *reading data* than *thinking about it*.
+Multiply this across dashboards, data queries, search results, and session resumptions, and you have a system that spends more tokens *reading data* than *thinking about it*.
 
 ## The Solution
 
@@ -20,11 +20,11 @@ Skill commands run in subprocesses. The full output never enters the context win
 
 ### 2. Intent-Driven Filtering
 
-When you specify an intent like `"find losing positions"`, Context Saver extracts only the fields that match. An 8-position portfolio (5 KB) becomes a 300-byte summary of just the losers.
+When you specify an intent like `"find failing services"`, Context Saver extracts only the fields that match. A 10-service health check (5 KB) becomes a 300-byte summary of just the failures.
 
 ### 3. Session Continuity
 
-Critical events (trades, alerts, decisions) are logged to a SQLite database with priority levels. Before conversation compaction, a 2 KB snapshot captures everything that matters. On resume, the snapshot restores context without re-fetching.
+Critical events (actions, alerts, decisions) are logged to a SQLite database with priority levels. Before conversation compaction, a 2 KB snapshot captures everything that matters. On resume, the snapshot restores context without re-fetching.
 
 ## Quick Start
 
@@ -53,25 +53,25 @@ export OPENCLAW_HOME=~/.openclaw
 
 ```bash
 # Basic: run a skill command and get a compact summary
-python3 scripts/ctx_run.py --skill alpaca-trader --cmd "account"
+python3 scripts/ctx_run.py --skill my-api --cmd "status"
 
 # With intent filtering: only return fields relevant to your question
-python3 scripts/ctx_run.py --skill alpaca-trader --cmd "positions" --intent "find losing positions"
+python3 scripts/ctx_run.py --skill my-api --cmd "list-items" --intent "find failing items"
 
 # With explicit field selection
-python3 scripts/ctx_run.py --skill alpaca-trader --cmd "account" --fields "equity,buying_power,day_pnl"
+python3 scripts/ctx_run.py --skill my-api --cmd "dashboard" --fields "active_users,revenue,errors"
 
-# Options chain with intent (biggest savings)
-python3 scripts/ctx_run.py --skill alpaca-trader --cmd "chain AAPL" --intent "high IV puts expiring this week"
+# Large dataset with intent (biggest savings)
+python3 scripts/ctx_run.py --skill my-api --cmd "search results" --intent "high priority unresolved"
 ```
 
 ### Batch Execution (Multiple Skills, One Call)
 
 ```bash
 python3 scripts/ctx_batch.py --commands '[
-  {"skill": "alpaca-trader", "cmd": "account", "fields": ["equity", "buying_power"]},
-  {"skill": "alpaca-trader", "cmd": "positions", "intent": "summary"},
-  {"skill": "alpaca-trader", "cmd": "movers", "intent": "top 5"}
+  {"skill": "my-api", "cmd": "dashboard", "fields": ["active_users", "error_rate"]},
+  {"skill": "analytics-engine", "cmd": "metrics", "intent": "summary"},
+  {"skill": "health-monitor", "cmd": "check", "intent": "failures only"}
 ]'
 ```
 
@@ -79,8 +79,8 @@ python3 scripts/ctx_batch.py --commands '[
 
 ```bash
 # Log a critical event
-python3 scripts/ctx_session.py log --type "trade" --priority critical \
-  --data '{"action":"buy","symbol":"AAPL","qty":100}'
+python3 scripts/ctx_session.py log --type "action" --priority critical \
+  --data '{"operation":"deploy","service":"api-gateway","version":"2.1.0"}'
 
 # Build snapshot before compaction
 python3 scripts/ctx_session.py snapshot
@@ -96,10 +96,10 @@ python3 scripts/ctx_session.py stats
 
 ```bash
 # Full-text search across all indexed outputs
-python3 scripts/ctx_search.py "high IV options"
+python3 scripts/ctx_search.py "error rate spike"
 
 # Scoped to a specific skill
-python3 scripts/ctx_search.py "losing positions" --source alpaca-trader
+python3 scripts/ctx_search.py "failed deployments" --source my-api
 ```
 
 ### View Stats
@@ -113,10 +113,10 @@ python3 scripts/ctx_stats.py
 
 | Operation | Raw Size | Context Saver | Savings |
 |-----------|----------|---------------|---------|
-| Account query | 3 KB | 120 B | **96%** |
-| Positions (8 stocks) | 5 KB | 300 B | **94%** |
-| Options chain (AAPL) | 20-50 KB | 500 B | **97%** |
-| Morning brief pipeline | 23 KB (4 calls) | 2 KB (1 batch) | **91%** |
+| Dashboard query | 3 KB | 120 B | **96%** |
+| List items (50 records) | 5 KB | 300 B | **94%** |
+| Search results (200 hits) | 20-50 KB | 500 B | **97%** |
+| Multi-skill pipeline | 23 KB (4 calls) | 2 KB (1 batch) | **91%** |
 | Session cold start | 20 KB workspace | 2 KB snapshot | **90%** |
 | Full day operation | ~750K tokens | ~200K tokens | **73%** |
 
@@ -125,36 +125,36 @@ See [docs/BENCHMARKS.md](docs/BENCHMARKS.md) for methodology and detailed scenar
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                   Claude Context Window              │
-│                                                     │
-│  ┌─────────────┐  ┌──────────────┐  ┌────────────┐ │
-│  │ 120 B       │  │ 300 B        │  │ 2 KB       │ │
-│  │ account     │  │ positions    │  │ session    │ │
-│  │ summary     │  │ summary      │  │ snapshot   │ │
-│  └──────┬──────┘  └──────┬───────┘  └─────┬──────┘ │
-│         │               │               │          │
-└─────────┼───────────────┼───────────────┼──────────┘
-          │               │               │
-    ┌─────┴───────────────┴───────────────┴─────┐
-    │            Context Saver Layer             │
-    │                                            │
-    │  ┌──────────┐ ┌───────────┐ ┌───────────┐ │
-    │  │ Sandbox  │ │  Intent   │ │  Session  │ │
-    │  │ Runner   │ │  Filter   │ │  Tracker  │ │
-    │  └────┬─────┘ └─────┬─────┘ └─────┬─────┘ │
-    │       │             │             │        │
-    │  ┌────┴─────────────┴─────────────┴────┐   │
-    │  │     SQLite FTS5 Index + Stats       │   │
-    │  │     (~/.openclaw/context/*.db)      │   │
-    │  └─────────────────────────────────────┘   │
-    └────────────────────────────────────────────┘
-          │               │               │
-    ┌─────┴──────┐  ┌─────┴──────┐  ┌────┴───────┐
-    │ 3 KB       │  │ 5 KB       │  │ 20-50 KB   │
-    │ account    │  │ positions  │  │ options    │
-    │ raw JSON   │  │ raw JSON   │  │ chain JSON │
-    └────────────┘  └────────────┘  └────────────┘
++---------------------------------------------------------+
+|                   Claude Context Window                  |
+|                                                         |
+|  +-------------+  +--------------+  +------------+     |
+|  | 120 B       |  | 300 B        |  | 2 KB       |     |
+|  | dashboard   |  | items        |  | session    |     |
+|  | summary     |  | summary      |  | snapshot   |     |
+|  +------+------+  +------+-------+  +-----+------+     |
+|         |               |               |              |
++---------+---------------+---------------+--------------+
+          |               |               |
+    +-----+---------------+---------------+-----+
+    |            Context Saver Layer             |
+    |                                            |
+    |  +----------+ +-----------+ +-----------+  |
+    |  | Sandbox  | |  Intent   | |  Session  |  |
+    |  | Runner   | |  Filter   | |  Tracker  |  |
+    |  +----+-----+ +-----+-----+ +-----+-----+  |
+    |       |             |             |          |
+    |  +----+-------------+-------------+----+     |
+    |  |     SQLite FTS5 Index + Stats       |     |
+    |  |     (~/.openclaw/context/*.db)      |     |
+    |  +-------------------------------------+     |
+    +----------------------------------------------+
+          |               |               |
+    +-----+------+  +-----+------+  +----+-------+
+    | 3 KB       |  | 5 KB       |  | 20-50 KB   |
+    | dashboard  |  | items      |  | search     |
+    | raw JSON   |  | raw JSON   |  | results    |
+    +------------+  +------------+  +------------+
          Skill Subprocesses (never enter context)
 ```
 
@@ -180,9 +180,9 @@ The full output never touches the context window. If Claude needs more detail la
 
 The intent filter uses keyword matching against JSON keys and values:
 
-- `"find losing positions"` matches position entries where `unrealized_pl < 0`
-- `"high IV puts"` matches options where `implied_volatility` is above threshold and `option_type == "put"`
-- `"check balance"` matches `equity`, `buying_power`, `cash` fields
+- `"find failing services"` matches entries where `status == "error"` or `health == "unhealthy"`
+- `"high priority"` matches items where `priority` is `"critical"` or `"high"`
+- `"check active users"` matches `active_users`, `user_count`, `sessions` fields
 
 This is deliberately simple -- no ML, no embeddings, just fast keyword matching that works reliably.
 
@@ -192,8 +192,8 @@ Events are stored with four priority levels:
 
 | Priority | Label | Budget | Examples |
 |----------|-------|--------|----------|
-| P1 | Critical | 40% | Trades executed, stop losses triggered |
-| P2 | High | 30% | Price alerts, large P&L changes |
+| P1 | Critical | 40% | Deployments, system alerts, critical actions |
+| P2 | High | 30% | Config changes, threshold breaches |
 | P3 | Medium | 20% | Analysis results, routine checks |
 | P4 | Low | 10% | Informational queries, minor updates |
 

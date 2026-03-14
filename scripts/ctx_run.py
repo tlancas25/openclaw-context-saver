@@ -208,11 +208,11 @@ def record_stats(conn, skill, command, intent, raw_bytes, summary_bytes, timesta
 def main():
     parser = argparse.ArgumentParser(
         description="Run an OpenClaw skill command in a sandbox with automatic summarization.",
-        epilog="Example: ctx_run.py --skill alpaca-trader --cmd 'account' --intent 'check balance'",
+        epilog="Example: ctx_run.py --skill my-api --cmd 'dashboard' --intent 'check error rate'",
     )
     parser.add_argument("--skill", required=True, help="Name of the skill to execute")
     parser.add_argument("--cmd", required=True, help="Command to pass to the skill script")
-    parser.add_argument("--intent", help="Intent string for filtering (e.g., 'find losing positions')")
+    parser.add_argument("--intent", help="Intent string for filtering (e.g., 'find failing items')")
     parser.add_argument("--fields", help="Comma-separated list of fields to extract")
     parser.add_argument("--raw", action="store_true", help="Return full output without filtering")
     args = parser.parse_args()

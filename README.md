@@ -255,6 +255,8 @@ Shows total bytes saved, number of runs, average compression ratio, top skills b
 
 ## Benchmarks
 
+![Before vs After Data Breakdown](docs/savings-breakdown.png)
+
 | Operation | Without | With Context Saver | Savings |
 |-----------|---------|--------------------|---------|
 | Single API query (40+ fields) | 3 KB | 120 B | **96%** |

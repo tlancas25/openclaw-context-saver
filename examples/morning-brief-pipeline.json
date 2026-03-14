@@ -1,0 +1,43 @@
+{
+  "name": "morning-brief-ctx",
+  "description": "Morning trading brief using context-saver batch execution. Replaces 4 separate skill calls (23 KB) with a single batch call (2 KB).",
+  "version": "1.0.0",
+  "timeout": 300,
+  "steps": [
+    {
+      "id": "batch_morning_data",
+      "skill": "context-saver",
+      "command": "python3 scripts/ctx_batch.py",
+      "commands": [
+        {
+          "skill": "alpaca-trader",
+          "cmd": "account",
+          "fields": ["equity", "buying_power", "day_pnl", "portfolio_value"]
+        },
+        {
+          "skill": "alpaca-trader",
+          "cmd": "positions",
+          "intent": "summary with PnL for each position"
+        },
+        {
+          "skill": "alpaca-trader",
+          "cmd": "movers",
+          "intent": "top 5 by volume"
+        }
+      ],
+      "output": "$morning_data"
+    },
+    {
+      "id": "log_brief",
+      "skill": "context-saver",
+      "command": "python3 scripts/ctx_session.py log --type morning_brief --priority medium --data '{\"completed\": true}'",
+      "depends_on": ["batch_morning_data"]
+    },
+    {
+      "id": "deliver_notification",
+      "skill": "notification-router",
+      "command": "python3 scripts/notify.py send --to user --priority medium --subject 'Morning Brief' --body 'See pipeline output'",
+      "depends_on": ["batch_morning_data"]
+    }
+  ]
+}

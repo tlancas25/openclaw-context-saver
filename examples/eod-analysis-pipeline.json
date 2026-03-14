@@ -1,0 +1,55 @@
+{
+  "name": "eod-analysis-ctx",
+  "description": "End-of-day market analysis using context-saver batch execution. Consolidates account, positions, orders, and movers into a single filtered response.",
+  "version": "1.0.0",
+  "timeout": 600,
+  "steps": [
+    {
+      "id": "batch_eod_data",
+      "skill": "context-saver",
+      "command": "python3 scripts/ctx_batch.py",
+      "commands": [
+        {
+          "skill": "alpaca-trader",
+          "cmd": "account",
+          "fields": ["equity", "buying_power", "day_pnl", "portfolio_value", "cash"]
+        },
+        {
+          "skill": "alpaca-trader",
+          "cmd": "positions",
+          "intent": "all positions with PnL and daily change"
+        },
+        {
+          "skill": "alpaca-trader",
+          "cmd": "orders",
+          "intent": "today's filled orders"
+        },
+        {
+          "skill": "alpaca-trader",
+          "cmd": "movers",
+          "intent": "top 10 by absolute change"
+        }
+      ],
+      "output": "$eod_data"
+    },
+    {
+      "id": "log_eod",
+      "skill": "context-saver",
+      "command": "python3 scripts/ctx_session.py log --type eod_analysis --priority high --data '{\"type\": \"eod\", \"completed\": true}'",
+      "depends_on": ["batch_eod_data"]
+    },
+    {
+      "id": "snapshot",
+      "skill": "context-saver",
+      "command": "python3 scripts/ctx_session.py snapshot",
+      "depends_on": ["log_eod"],
+      "comment": "Save session state at end of day"
+    },
+    {
+      "id": "deliver_notification",
+      "skill": "notification-router",
+      "command": "python3 scripts/notify.py send --to user --priority high --subject 'EOD Analysis' --body 'See pipeline output'",
+      "depends_on": ["batch_eod_data"]
+    }
+  ]
+}

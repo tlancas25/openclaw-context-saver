@@ -1,0 +1,14 @@
+{
+  "name": "context-saver",
+  "version": "1.0.0",
+  "description": "Token-saving execution layer — sandboxed skill runs, intent filtering, session continuity",
+  "capabilities": ["run", "batch", "session-log", "session-snapshot", "session-restore", "search", "stats"],
+  "outputSchema": {
+    "success": "boolean",
+    "summary": "string",
+    "bytes_saved": "number",
+    "data": "object"
+  },
+  "sla": { "maxLatencyMs": 30000, "availability": 0.99 },
+  "permissions": ["exec:skills", "fs:context/*"]
+}

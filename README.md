@@ -1,71 +1,166 @@
 # OpenClaw Context Saver
 
-> Reduce OpenClaw token consumption by 70-98% through sandboxed execution, intent filtering, and session continuity
+**Cut your AI agent's token usage by 70-98%. Zero dependencies. Drop-in install.**
 
-## The Problem
+Your agent calls an API skill and gets back 3-50 KB of raw JSON. It needed 120 bytes. The rest? Wasted tokens burning through your context window.
 
-Multi-agent systems like OpenClaw orchestrate dozens of skills -- APIs, analytics engines, search tools, notification routers. Each skill call can return 3-50 KB of raw JSON. In a typical day of operation, an OpenClaw instance consumes **750K+ tokens** just feeding API responses into the context window.
+Context Saver fixes this with three mechanisms: **sandboxed execution**, **intent-driven filtering**, and **session continuity** — all in pure Python with no external dependencies.
 
-Most of that data is noise. When you ask "how many active users?", the full API response includes 40+ fields. You needed one. The other 39 fields consumed tokens for nothing.
+---
 
-Multiply this across dashboards, data queries, search results, and session resumptions, and you have a system that spends more tokens *reading data* than *thinking about it*.
+## Before & After
 
-## The Solution
+```
+WITHOUT Context Saver:
+  agent calls skill → 3 KB raw JSON floods context → 40 wasted fields
+  agent calls skill → 5 KB raw JSON floods context → 50 irrelevant records
+  agent calls skill → 20 KB raw JSON floods context → 200 search results
+  Session compacts → all working state lost → 20 KB cold restart
 
-Context Saver introduces three mechanisms that work together to cut token waste:
+  Daily token burn: ~750,000 tokens
 
-### 1. Sandboxed Execution
+WITH Context Saver:
+  agent calls ctx_run → 120 B summary enters context → full data indexed for later
+  agent calls ctx_run → 300 B filtered enters context → only matching records
+  agent calls ctx_batch → 500 B combined enters context → one call, not three
+  Session compacts → 2 KB snapshot preserved → instant resume
 
-Skill commands run in subprocesses. The full output never enters the context window. Instead, a compact summary (100-500 bytes) is returned while the full output is indexed in SQLite FTS5 for on-demand retrieval.
+  Daily token burn: ~200,000 tokens (73% reduction)
+```
 
-### 2. Intent-Driven Filtering
+---
 
-When you specify an intent like `"find failing services"`, Context Saver extracts only the fields that match. A 10-service health check (5 KB) becomes a 300-byte summary of just the failures.
+## Installation
 
-### 3. Session Continuity
-
-Critical events (actions, alerts, decisions) are logged to a SQLite database with priority levels. Before conversation compaction, a 2 KB snapshot captures everything that matters. On resume, the snapshot restores context without re-fetching.
-
-## Quick Start
-
-### Installation
+### Option 1: Clone into your OpenClaw skills directory
 
 ```bash
-# Clone or copy into your OpenClaw workspace
+git clone https://github.com/tlancas25/openclaw-context-saver.git
 cp -r openclaw-context-saver ~/.openclaw/workspace/skills/context-saver
+```
 
-# Verify
+### Option 2: Clone and symlink
+
+```bash
+git clone https://github.com/tlancas25/openclaw-context-saver.git ~/openclaw-context-saver
+ln -s ~/openclaw-context-saver ~/.openclaw/workspace/skills/context-saver
+```
+
+### Verify installation
+
+```bash
 python3 ~/.openclaw/workspace/skills/context-saver/scripts/ctx_stats.py
 ```
 
-### Environment
+You should see a JSON response with `"success": true`. That's it — no pip install, no node_modules, no build step.
 
-Context Saver uses the `OPENCLAW_HOME` environment variable to locate your OpenClaw installation. It defaults to `~/.openclaw` if not set.
+### Requirements
+
+- **Python 3.8+** (standard library only — no pip dependencies)
+- **SQLite** (bundled with Python)
+- **OpenClaw** instance with a `workspace/skills/` directory
+
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `OPENCLAW_HOME` | `~/.openclaw` | Root directory for your OpenClaw instance |
+| `CTX_SNAPSHOT_BUDGET` | `2048` | Max bytes for session snapshots (adjustable) |
+| `CTX_FTS_ENABLED` | `1` | Set to `0` to disable FTS5 indexing |
+
+If your OpenClaw home directory is somewhere other than `~/.openclaw`, set it:
 
 ```bash
-# Optional: set if your OpenClaw home is non-standard
-export OPENCLAW_HOME=~/.openclaw
+export OPENCLAW_HOME=/path/to/your/openclaw
 ```
+
+---
+
+## How It Works
+
+Context Saver has three layers that work together:
+
+### Layer 1: Sandboxed Execution
+
+Skill commands run in **isolated subprocesses**. The full output is captured but never returned to the context window. Instead, a compact summary (100-500 bytes) is sent back while the full output gets indexed in SQLite FTS5 for on-demand retrieval.
+
+```bash
+# Without Context Saver: raw 3 KB JSON enters context
+python3 skills/my-api/scripts/cli.py dashboard
+
+# With Context Saver: 120 B summary enters context, full output indexed
+python3 skills/context-saver/scripts/ctx_run.py --skill my-api --cmd "dashboard"
+```
+
+### Layer 2: Intent-Driven Filtering
+
+Pass an `--intent` string and Context Saver extracts only the fields that match your question. Uses fast keyword scoring against JSON keys and values — no ML, no embeddings, no latency.
+
+```bash
+# Returns only fields related to errors (3 fields instead of 40+)
+python3 scripts/ctx_run.py --skill my-api --cmd "dashboard" --intent "check error rate"
+
+# Returns only items with failing status
+python3 scripts/ctx_run.py --skill my-api --cmd "list-services" --intent "find failures"
+
+# Or use explicit field selection for precision
+python3 scripts/ctx_run.py --skill my-api --cmd "dashboard" --fields "active_users,error_rate,uptime"
+```
+
+### Layer 3: Session Continuity
+
+Critical events are logged to SQLite with priority levels (P1-P4). Before conversation compaction wipes your context, a **2 KB snapshot** captures everything that matters. On resume, the snapshot restores full operational context without re-fetching anything.
+
+```bash
+# Log events as they happen
+python3 scripts/ctx_session.py log --type "deploy" --priority critical \
+  --data '{"service":"api-v2","version":"2.1.0"}'
+
+# Before compaction: save state
+python3 scripts/ctx_session.py snapshot
+
+# After compaction: restore state
+python3 scripts/ctx_session.py restore
+```
+
+---
 
 ## Usage
 
-### Run a Skill Command (Sandboxed)
+### Single Command (Sandboxed)
 
 ```bash
-# Basic: run a skill command and get a compact summary
+# Basic — auto-summarize any skill output
 python3 scripts/ctx_run.py --skill my-api --cmd "status"
 
-# With intent filtering: only return fields relevant to your question
+# With intent — only return relevant fields
 python3 scripts/ctx_run.py --skill my-api --cmd "list-items" --intent "find failing items"
 
-# With explicit field selection
-python3 scripts/ctx_run.py --skill my-api --cmd "dashboard" --fields "active_users,revenue,errors"
+# With field selection — explicit control
+python3 scripts/ctx_run.py --skill my-api --cmd "dashboard" --fields "users,errors,latency"
 
-# Large dataset with intent (biggest savings)
-python3 scripts/ctx_run.py --skill my-api --cmd "search results" --intent "high priority unresolved"
+# Raw mode — get full output (bypasses filtering)
+python3 scripts/ctx_run.py --skill my-api --cmd "dashboard" --raw
+```
+
+**Output format:**
+
+```json
+{
+  "success": true,
+  "skill": "my-api",
+  "command": "dashboard",
+  "summary": {"active_users": 12543, "error_rate": 0.02, "uptime": "99.98%"},
+  "raw_bytes": 3072,
+  "summary_bytes": 85,
+  "bytes_saved": 2987,
+  "savings_pct": 97.2
+}
 ```
 
 ### Batch Execution (Multiple Skills, One Call)
+
+Replace 4 separate skill calls (23 KB, 4 context insertions) with 1 batch call (2 KB, 1 insertion):
 
 ```bash
 python3 scripts/ctx_batch.py --commands '[
@@ -75,144 +170,196 @@ python3 scripts/ctx_batch.py --commands '[
 ]'
 ```
 
-### Session Event Tracking
+**Output format:**
+
+```json
+{
+  "success": true,
+  "commands_run": 3,
+  "commands_succeeded": 3,
+  "commands_failed": 0,
+  "total_raw_bytes": 15360,
+  "total_summary_bytes": 1240,
+  "total_bytes_saved": 14120,
+  "total_savings_pct": 91.9,
+  "results": [...]
+}
+```
+
+You can also load from a pipeline file:
 
 ```bash
-# Log a critical event
-python3 scripts/ctx_session.py log --type "action" --priority critical \
-  --data '{"operation":"deploy","service":"api-gateway","version":"2.1.0"}'
-
-# Build snapshot before compaction
-python3 scripts/ctx_session.py snapshot
-
-# Restore context on resume
-python3 scripts/ctx_session.py restore
-
-# View session statistics
-python3 scripts/ctx_session.py stats
+python3 scripts/ctx_batch.py --pipeline examples/daily-status-pipeline.json
 ```
 
 ### Search Indexed Data
 
+Every `ctx_run` execution indexes the full output in SQLite FTS5. Query it later without re-running commands:
+
 ```bash
-# Full-text search across all indexed outputs
+# Search all indexed outputs
 python3 scripts/ctx_search.py "error rate spike"
 
 # Scoped to a specific skill
 python3 scripts/ctx_search.py "failed deployments" --source my-api
+
+# Limit results
+python3 scripts/ctx_search.py "timeout" --limit 5
 ```
+
+Supports FTS5 query syntax: `"exact phrase"`, `term1 AND term2`, `prefix*`.
+
+### Session Event Tracking
+
+```bash
+# Log events at different priority levels
+python3 scripts/ctx_session.py log --type "deploy" --priority critical \
+  --data '{"service":"api-v2","version":"2.1.0"}'
+
+python3 scripts/ctx_session.py log --type "alert" --priority high \
+  --data '{"service":"cache","msg":"memory at 92%"}'
+
+python3 scripts/ctx_session.py log --type "analysis" --priority medium \
+  --data '{"result":"stable","anomalies":0}'
+
+# Snapshot before compaction
+python3 scripts/ctx_session.py snapshot
+
+# Restore after compaction
+python3 scripts/ctx_session.py restore
+
+# View session stats
+python3 scripts/ctx_session.py stats
+```
+
+**Priority system:**
+
+| Priority | Label | Snapshot Budget | Use For |
+|----------|-------|-----------------|---------|
+| `critical` | P1 | 40% of 2 KB | Actions that changed state, system errors |
+| `high` | P2 | 30% of 2 KB | Alerts, config changes, threshold breaches |
+| `medium` | P3 | 20% of 2 KB | Analysis results, routine checks |
+| `low` | P4 | 10% of 2 KB | Info queries, status checks |
+
+The snapshot builder allocates budget by priority, ensuring critical events are **always** preserved even when the 2 KB limit is tight.
 
 ### View Stats
 
 ```bash
 python3 scripts/ctx_stats.py
-# Output: total bytes saved, calls made, avg compression ratio, session events
 ```
+
+Shows total bytes saved, number of runs, average compression ratio, top skills by savings, indexed documents count, and session event stats.
+
+---
 
 ## Benchmarks
 
-| Operation | Raw Size | Context Saver | Savings |
-|-----------|----------|---------------|---------|
-| Dashboard query | 3 KB | 120 B | **96%** |
-| List items (50 records) | 5 KB | 300 B | **94%** |
+| Operation | Without | With Context Saver | Savings |
+|-----------|---------|--------------------|---------|
+| Single API query (40+ fields) | 3 KB | 120 B | **96%** |
+| List endpoint (50 records) | 5 KB | 300 B | **94%** |
 | Search results (200 hits) | 20-50 KB | 500 B | **97%** |
-| Multi-skill pipeline | 23 KB (4 calls) | 2 KB (1 batch) | **91%** |
-| Session cold start | 20 KB workspace | 2 KB snapshot | **90%** |
-| Full day operation | ~750K tokens | ~200K tokens | **73%** |
+| Multi-skill pipeline (4 calls) | 23 KB | 2 KB (1 batch) | **91%** |
+| Session cold start after compaction | 20 KB | 2 KB snapshot | **90%** |
+| Full day of agent operation | ~750K tokens | ~200K tokens | **73%** |
 
-See [docs/BENCHMARKS.md](docs/BENCHMARKS.md) for methodology and detailed scenarios.
+See [docs/BENCHMARKS.md](docs/BENCHMARKS.md) for detailed methodology and scenario breakdowns.
+
+---
 
 ## Architecture
 
 ```
-+---------------------------------------------------------+
-|                   Claude Context Window                  |
-|                                                         |
-|  +-------------+  +--------------+  +------------+     |
-|  | 120 B       |  | 300 B        |  | 2 KB       |     |
-|  | dashboard   |  | items        |  | session    |     |
-|  | summary     |  | summary      |  | snapshot   |     |
-|  +------+------+  +------+-------+  +-----+------+     |
-|         |               |               |              |
-+---------+---------------+---------------+--------------+
-          |               |               |
-    +-----+---------------+---------------+-----+
-    |            Context Saver Layer             |
-    |                                            |
-    |  +----------+ +-----------+ +-----------+  |
-    |  | Sandbox  | |  Intent   | |  Session  |  |
-    |  | Runner   | |  Filter   | |  Tracker  |  |
-    |  +----+-----+ +-----+-----+ +-----+-----+  |
-    |       |             |             |          |
-    |  +----+-------------+-------------+----+     |
-    |  |     SQLite FTS5 Index + Stats       |     |
-    |  |     (~/.openclaw/context/*.db)      |     |
-    |  +-------------------------------------+     |
-    +----------------------------------------------+
-          |               |               |
-    +-----+------+  +-----+------+  +----+-------+
-    | 3 KB       |  | 5 KB       |  | 20-50 KB   |
-    | dashboard  |  | items      |  | search     |
-    | raw JSON   |  | raw JSON   |  | results    |
-    +------------+  +------------+  +------------+
-         Skill Subprocesses (never enter context)
+┌─────────────────────────────────────────────────────┐
+│                  Claude Context Window               │
+│                                                     │
+│   ┌──────────┐   ┌──────────┐   ┌──────────┐      │
+│   │  120 B   │   │  300 B   │   │   2 KB   │      │
+│   │ summary  │   │ filtered │   │ snapshot │      │
+│   └────┬─────┘   └────┬─────┘   └────┬─────┘      │
+│        │              │              │             │
+└────────┼──────────────┼──────────────┼─────────────┘
+         │              │              │
+   ┌─────┴──────────────┴──────────────┴──────┐
+   │           Context Saver Layer             │
+   │                                           │
+   │  ┌──────────┐ ┌──────────┐ ┌──────────┐  │
+   │  │ Sandbox  │ │  Intent  │ │ Session  │  │
+   │  │ Runner   │ │  Filter  │ │ Tracker  │  │
+   │  └────┬─────┘ └────┬─────┘ └────┬─────┘  │
+   │       │            │            │         │
+   │  ┌────┴────────────┴────────────┴────┐    │
+   │  │    SQLite FTS5 Index + Stats      │    │
+   │  │    (~/.openclaw/context/*.db)     │    │
+   │  └───────────────────────────────────┘    │
+   └───────────────────────────────────────────┘
+         │              │              │
+   ┌─────┴─────┐  ┌─────┴─────┐  ┌────┴──────┐
+   │   3 KB    │  │   5 KB    │  │  20-50 KB │
+   │ raw JSON  │  │ raw JSON  │  │  raw JSON │
+   └───────────┘  └───────────┘  └───────────┘
+        Skill Subprocesses (never enter context)
 ```
 
-## How It Works
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for detailed data flow diagrams, SQLite schemas, and the snapshot budget allocation algorithm.
 
-### Sandboxed Execution
+---
 
-When you call `ctx_run.py`, it:
+## Integrating with Your Skills
 
-1. Locates the target skill in `$OPENCLAW_HOME/workspace/skills/`
-2. Spawns a subprocess to execute the skill command
-3. Captures stdout/stderr completely
-4. Parses the JSON output
-5. If `--fields` is specified, extracts only those fields
-6. If `--intent` is specified, applies intent-driven filtering
-7. Indexes the full output in SQLite FTS5 for later search
-8. Records byte savings in the stats database
-9. Returns a compact JSON summary to stdout
+Context Saver works with **any** OpenClaw skill out of the box. It wraps the skill's CLI output and filters it automatically.
 
-The full output never touches the context window. If Claude needs more detail later, it can use `ctx_search.py` to query the indexed data.
+For even better results, add a `--summary` flag to your skill scripts so they can produce domain-aware compact output:
 
-### Intent-Driven Filtering
+```python
+# my_skill/scripts/cli.py
+import argparse, json
 
-The intent filter uses keyword matching against JSON keys and values:
+def summarize(data, fields=None):
+    if fields:
+        return {k: v for k, v in data.items() if k in fields}
+    return {k: v for k, v in data.items() if not isinstance(v, (dict, list))}
 
-- `"find failing services"` matches entries where `status == "error"` or `health == "unhealthy"`
-- `"high priority"` matches items where `priority` is `"critical"` or `"high"`
-- `"check active users"` matches `active_users`, `user_count`, `sessions` fields
+parser = argparse.ArgumentParser()
+parser.add_argument("--summary", action="store_true")
+parser.add_argument("--fields", help="Comma-separated fields")
+args = parser.parse_args()
 
-This is deliberately simple -- no ML, no embeddings, just fast keyword matching that works reliably.
+result = your_api_call()
+if args.summary:
+    result = summarize(result, args.fields.split(",") if args.fields else None)
+print(json.dumps(result))
+```
 
-### Session Continuity
+See [docs/INTEGRATION.md](docs/INTEGRATION.md) for pipeline integration, automated event logging, HEARTBEAT.md hooks, and workflow-engine compatibility.
 
-Events are stored with four priority levels:
+---
 
-| Priority | Label | Budget | Examples |
-|----------|-------|--------|----------|
-| P1 | Critical | 40% | Deployments, system alerts, critical actions |
-| P2 | High | 30% | Config changes, threshold breaches |
-| P3 | Medium | 20% | Analysis results, routine checks |
-| P4 | Low | 10% | Informational queries, minor updates |
+## File Structure
 
-The snapshot builder allocates a 2 KB budget across priorities, ensuring critical events are always preserved. On restore, Claude gets a complete operational picture without re-running any commands.
+```
+openclaw-context-saver/
+├── scripts/
+│   ├── ctx_run.py        # Sandboxed skill execution + intent filtering
+│   ├── ctx_batch.py      # Multi-skill batch execution
+│   ├── ctx_session.py    # Session event tracking + snapshots
+│   ├── ctx_search.py     # FTS5 search across indexed outputs
+│   └── ctx_stats.py      # Usage statistics dashboard
+├── docs/
+│   ├── ARCHITECTURE.md   # Data flow, schemas, algorithms
+│   ├── BENCHMARKS.md     # Detailed scenarios and methodology
+│   └── INTEGRATION.md    # How to integrate with existing skills
+├── examples/
+│   ├── daily-status-pipeline.json    # Example batch pipeline
+│   └── eod-report-pipeline.json      # Example EOD pipeline
+├── SKILL.md              # OpenClaw skill manifest
+├── skill.json            # Machine-readable skill definition
+├── LICENSE               # MIT
+└── README.md
+```
 
-## Comparison with context-mode
-
-Context Saver is inspired by [context-mode](https://github.com/AnswerDotAI/context-mode), which provides FTS5 indexing and search for Claude conversations. Key differences:
-
-| Feature | context-mode | Context Saver |
-|---------|-------------|---------------|
-| Scope | General conversation context | OpenClaw skill execution |
-| Execution | External indexing tool | Integrated skill wrapper |
-| Filtering | Query-based retrieval | Intent-driven pre-filtering |
-| Sessions | Not supported | Priority-based event tracking |
-| Batching | Not supported | Multi-skill batch execution |
-| Target | Any Claude user | OpenClaw multi-agent systems |
-
-Context Saver builds on the FTS5 indexing concept and extends it with sandboxed execution, intent filtering, and session continuity -- features specific to multi-agent orchestration.
+---
 
 ## Configuration
 
@@ -220,36 +367,54 @@ All paths are derived from `OPENCLAW_HOME` (default: `~/.openclaw`):
 
 | Path | Purpose |
 |------|---------|
-| `$OPENCLAW_HOME/workspace/skills/` | Skill directories |
-| `$OPENCLAW_HOME/context/stats.db` | Execution stats and FTS5 index |
-| `$OPENCLAW_HOME/context/sessions.db` | Session event log and snapshots |
-| `$OPENCLAW_HOME/.env` | Environment variables for skill execution |
+| `$OPENCLAW_HOME/workspace/skills/` | Where Context Saver looks for skills to execute |
+| `$OPENCLAW_HOME/context/stats.db` | Execution statistics + FTS5 full-text index |
+| `$OPENCLAW_HOME/context/sessions.db` | Session event log + compaction snapshots |
+| `$OPENCLAW_HOME/.env` | Environment variables passed to skill subprocesses |
 
-### Environment Variables
+Both `.db` files are created automatically on first use. No setup required.
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `OPENCLAW_HOME` | `~/.openclaw` | Root directory for OpenClaw |
-| `CTX_SNAPSHOT_BUDGET` | `2048` | Max bytes for session snapshots |
-| `CTX_FTS_ENABLED` | `1` | Enable/disable FTS5 indexing |
+---
+
+## Comparison with context-mode
+
+Context Saver was inspired by [context-mode](https://github.com/AnswerDotAI/context-mode), an MCP server that provides FTS5 indexing for Claude conversations. We took the core insight (index data outside context, retrieve on demand) and extended it for multi-agent orchestration:
+
+| Feature | context-mode | Context Saver |
+|---------|-------------|---------------|
+| Scope | General Claude conversations | OpenClaw skill execution |
+| Install | MCP server (Node.js) | Drop-in Python scripts (stdlib only) |
+| Filtering | Query-based post-retrieval | Intent-driven pre-filtering |
+| Batching | Not supported | Multi-skill batch execution |
+| Sessions | Not supported | Priority-based event tracking + snapshots |
+| Target | Any Claude Code user | OpenClaw multi-agent systems |
+
+Both tools can coexist — they solve different layers of the same problem.
+
+---
 
 ## Contributing
 
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/your-feature`)
 3. Write tests for new functionality
-4. Ensure all scripts remain stdlib-only (no pip dependencies)
-5. All scripts must output valid JSON
-6. Submit a pull request
+4. Submit a pull request
 
 ### Development Guidelines
 
-- Python 3.8+ compatible
-- Standard library only -- no external dependencies
-- All output must be valid JSON (parseable by any consumer)
-- Errors return JSON with `{"success": false, "error": "message"}`
-- Scripts must be individually executable with `--help`
+- **Python 3.8+** compatible
+- **Standard library only** — no external dependencies (this is a hard rule)
+- All output must be **valid JSON** (parseable by any consumer)
+- Errors return `{"success": false, "error": "message"}`
+- Every script must support `--help`
+- Keep the tool generic — no references to specific APIs or services
+
+---
 
 ## License
 
 MIT License. See [LICENSE](LICENSE) for details.
+
+---
+
+Built for [OpenClaw](https://github.com/openclaw) multi-agent systems.

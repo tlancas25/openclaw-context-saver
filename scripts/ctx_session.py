@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Session event tracking with priority-based snapshot generation.
 
-Logs critical events (trades, alerts, decisions) to a SQLite database
+Logs critical events (actions, alerts, decisions) to a SQLite database
 with priority levels. Generates compact 2 KB snapshots for conversation
 compaction survival. Restores operational context on session resume.
 """
@@ -274,7 +274,7 @@ def main():
 
     # log subcommand
     log_parser = subparsers.add_parser("log", help="Log a session event")
-    log_parser.add_argument("--type", required=True, help="Event type (e.g., trade, alert, decision)")
+    log_parser.add_argument("--type", required=True, help="Event type (e.g., action, alert, decision)")
     log_parser.add_argument(
         "--priority",
         default="medium",

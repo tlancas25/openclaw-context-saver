@@ -1,6 +1,6 @@
 ---
 name: context-saver
-description: "Token-saving execution layer for OpenClaw. Runs skill commands in sandboxed subprocesses where only compact summaries enter the context window. Provides session continuity via SQLite event tracking that survives conversation compaction. Supports intent-driven filtering, batched multi-skill execution, and progressive memory loading. Use this skill to wrap any data-heavy operation to reduce token consumption by 70-98%."
+description: "Token-saving execution layer for OpenClaw v2.0. Runs skill commands in sandboxed subprocesses where only compact summaries enter the context window. Provides session continuity via SQLite event tracking that survives conversation compaction. Supports intent-driven filtering, batched multi-skill execution, and progressive memory loading. Includes automated installer that wires context-saver into AGENTS.md, TOOLS.md, and cron jobs with a single command. Use this skill to wrap any data-heavy operation to reduce token consumption by 70-98%."
 metadata: {"openclaw":{"emoji":"🪶","requires":{"bins":["python3"],"env":[]}}}
 ---
 

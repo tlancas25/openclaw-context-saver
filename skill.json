@@ -1,8 +1,8 @@
 {
   "name": "context-saver",
-  "version": "1.0.0",
-  "description": "Token-saving execution layer — sandboxed skill runs, intent filtering, session continuity",
-  "capabilities": ["run", "batch", "session-log", "session-snapshot", "session-restore", "search", "stats"],
+  "version": "2.0.0",
+  "description": "Token-saving execution layer — sandboxed skill runs, intent filtering, session continuity, auto-installer with agent wiring",
+  "capabilities": ["run", "batch", "session-log", "session-snapshot", "session-restore", "search", "stats", "install", "uninstall", "verify"],
   "outputSchema": {
     "success": "boolean",
     "summary": "string",

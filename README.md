@@ -36,27 +36,62 @@ WITH Context Saver:
 
 ## Installation
 
-### Option 1: Clone into your OpenClaw skills directory
+### One-Command Install (Recommended)
+
+```bash
+git clone https://github.com/tlancas25/openclaw-context-saver.git
+cd openclaw-context-saver
+python3 install.py
+```
+
+That's it. The installer automatically:
+1. **Copies scripts** into `~/.openclaw/workspace/skills/context-saver/`
+2. **Patches AGENTS.md** with mandatory Context Saver Protocol rules
+3. **Patches TOOLS.md** with quick-reference commands
+4. **Patches cron jobs** to route data-heavy skill calls through `ctx_run.py`
+5. **Initializes SQLite databases** for stats tracking and FTS5 indexing
+
+No pip install, no node_modules, no build step. Pure Python standard library.
+
+### Preview Before Installing
+
+```bash
+python3 install.py --dry-run
+```
+
+### Verify Installation
+
+```bash
+python3 install.py --verify
+```
+
+### Uninstall
+
+```bash
+python3 install.py --uninstall
+```
+
+Removes all wiring from AGENTS.md, TOOLS.md, and cron jobs. Scripts remain in place.
+
+### Installer Options
+
+```bash
+python3 install.py --openclaw-home /custom/path  # Custom OpenClaw directory
+python3 install.py --skip-cron                    # Don't patch cron jobs
+python3 install.py --skip-agents                  # Don't patch AGENTS.md
+python3 install.py --skip-tools                   # Don't patch TOOLS.md
+```
+
+### Manual Install (Alternative)
+
+If you prefer manual control:
 
 ```bash
 git clone https://github.com/tlancas25/openclaw-context-saver.git
 cp -r openclaw-context-saver ~/.openclaw/workspace/skills/context-saver
 ```
 
-### Option 2: Clone and symlink
-
-```bash
-git clone https://github.com/tlancas25/openclaw-context-saver.git ~/openclaw-context-saver
-ln -s ~/openclaw-context-saver ~/.openclaw/workspace/skills/context-saver
-```
-
-### Verify installation
-
-```bash
-python3 ~/.openclaw/workspace/skills/context-saver/scripts/ctx_stats.py
-```
-
-You should see a JSON response with `"success": true`. That's it — no pip install, no node_modules, no build step.
+Then follow the [Wiring Into Your Agent](#wiring-into-your-agent-important) section below to manually configure your agent.
 
 ### Requirements
 

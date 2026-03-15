@@ -80,6 +80,59 @@ export OPENCLAW_HOME=/path/to/your/openclaw
 
 ---
 
+## Wiring Into Your Agent (IMPORTANT)
+
+Context Saver doesn't work automatically — you need to tell your agent to route skill calls through it. Here's how:
+
+### For Cron Jobs / Scheduled Tasks
+
+Instead of telling your agent to call skills directly:
+
+```
+❌ "Use alpaca-trader skill to get account and positions"
+```
+
+Tell it to wrap calls through context-saver:
+
+```
+✅ "Use context-saver to wrap ALL skill calls:
+    python3 workspace/skills/context-saver/scripts/ctx_run.py \
+      --skill alpaca-trader --cmd 'account' \
+      --fields 'equity,buying_power,cash,day_pnl'
+    python3 workspace/skills/context-saver/scripts/ctx_run.py \
+      --skill alpaca-trader --cmd 'positions' --intent 'summary'"
+```
+
+Or use batch mode for multiple calls in one shot:
+
+```
+✅ python3 workspace/skills/context-saver/scripts/ctx_batch.py --commands '[
+    {"skill": "alpaca-trader", "cmd": "account", "fields": ["equity","buying_power"]},
+    {"skill": "alpaca-trader", "cmd": "positions", "intent": "summary"},
+    {"skill": "alpaca-trader", "cmd": "movers", "intent": "top 5"}
+  ]'
+```
+
+### Real-World Impact
+
+We measured a 24-hour period on a production OpenClaw instance **without** context-saver wired in:
+
+| Session | Tokens Used | Cost |
+|---------|------------|------|
+| iMessage agent (49 messages) | 1,758,601 | $0.995 |
+| Heartbeat (13 messages) | 293,342 | $0.305 |
+| Morning brief #1 (8 messages) | 152,265 | $0.212 |
+| Morning brief #2 (7 messages) | 130,548 | $0.139 |
+| **Daily Total** | **2,356,572** | **$1.70** |
+
+After wiring context-saver into the morning briefs and EOD workflow, the morning briefs dropped from ~150K tokens to ~40K tokens each — **a 73% reduction** just from filtering Alpaca API responses.
+
+### The Key Rule
+
+**If a skill returns JSON, wrap it in `ctx_run.py`.** The only exceptions are tiny outputs (<500 bytes) where filtering adds overhead.
+
+---
+
 ## How It Works
 
 Context Saver has three layers that work together:

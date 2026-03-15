@@ -63,15 +63,41 @@ def load_env():
 
 
 def find_skill_script(skill_name):
-    """Locate the main script for a skill."""
+    """Locate the main CLI script for a skill.
+
+    Priority order:
+    1. <skill_name>_cli.py (explicit CLI entry point)
+    2. cli.py
+    3. main.py
+    4. <skill_name>.py (underscore-normalized)
+    5. First alphabetical .py file as fallback
+    """
     skill_dir = os.path.join(SKILLS_DIR, skill_name)
     if not os.path.isdir(skill_dir):
         return None
     scripts_dir = os.path.join(skill_dir, "scripts")
-    if os.path.isdir(scripts_dir):
-        for f in os.listdir(scripts_dir):
-            if f.endswith(".py") and not f.startswith("_"):
-                return os.path.join(scripts_dir, f)
+    if not os.path.isdir(scripts_dir):
+        return None
+
+    normalized = skill_name.replace("-", "_")
+    candidates = [
+        f"{normalized}_cli.py",
+        "cli.py",
+        "main.py",
+        f"{normalized}.py",
+    ]
+
+    # Try priority candidates first
+    for candidate in candidates:
+        path = os.path.join(scripts_dir, candidate)
+        if os.path.isfile(path):
+            return path
+
+    # Fallback: first .py file alphabetically (excluding private files)
+    py_files = sorted(f for f in os.listdir(scripts_dir)
+                      if f.endswith(".py") and not f.startswith("_"))
+    if py_files:
+        return os.path.join(scripts_dir, py_files[0])
     return None
 
 

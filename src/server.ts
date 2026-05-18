@@ -6,6 +6,8 @@ import {
   ListToolsRequestSchema,
   CallToolRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
+import * as fs from "fs";
+import * as path from "path";
 import { loadEnv } from "./lib/env";
 import { closeAll } from "./lib/db";
 
@@ -22,8 +24,24 @@ import { handleDoctor } from "./tools/doctor";
 
 loadEnv();
 
+// Read version from package.json at runtime so it can never drift from the
+// published version label.
+function loadVersion(): string {
+  for (const candidate of [
+    path.resolve(__dirname, "..", "package.json"),
+    path.resolve(__dirname, "..", "..", "package.json"),
+  ]) {
+    try {
+      const raw = fs.readFileSync(candidate, "utf-8");
+      const pkg = JSON.parse(raw);
+      if (pkg.version) return pkg.version as string;
+    } catch { /* try next */ }
+  }
+  return "0.0.0-unknown";
+}
+
 const server = new Server(
-  { name: "context-cooler", version: "5.0.0" },
+  { name: "context-cooler", version: loadVersion() },
   { capabilities: { tools: {} } }
 );
 

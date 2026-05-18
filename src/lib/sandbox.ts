@@ -265,27 +265,28 @@ function buildCommand(language: SupportedLanguage, code: string): CommandSpec {
     case "elixir":
       return { cmd: "elixir", args: ["-e", code] };
     case "go": {
-      // Go requires writing to a temp file
-      const tmpFile = path.join(os.tmpdir(), `ctx_${Date.now()}.go`);
+      // Go requires writing to a temp file. Use a per-call mkdtemp dir so two
+      // parallel ctx_execute calls can't clobber each other and so the file
+      // name isn't predictable from wall-clock time.
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ctx-go-"));
+      const tmpFile = path.join(dir, "main.go");
       fs.writeFileSync(tmpFile, code);
       return {
         cmd: "go",
         args: ["run", tmpFile],
         cleanup: () => {
-          try {
-            fs.unlinkSync(tmpFile);
-          } catch {
-            /* ignore */
-          }
+          try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ }
         },
       };
     }
     case "rust": {
-      // Rust requires writing to temp file and compiling
-      const srcFile = path.join(os.tmpdir(), `ctx_${Date.now()}.rs`);
-      const binFile = srcFile.replace(".rs", "");
+      // Rust needs compile-then-run. Use a per-call mkdtemp dir; the bin and
+      // source paths come from mkdtempSync (random suffix, no user-controlled
+      // chars) so the bash -c interpolation here is bounded to safe values.
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ctx-rs-"));
+      const srcFile = path.join(dir, "main.rs");
+      const binFile = path.join(dir, "main");
       fs.writeFileSync(srcFile, code);
-      // Return a shell command that compiles and runs
       return {
         cmd: "bash",
         args: [
@@ -293,16 +294,7 @@ function buildCommand(language: SupportedLanguage, code: string): CommandSpec {
           `rustc --edition 2021 -o "${binFile}" "${srcFile}" && "${binFile}"`,
         ],
         cleanup: () => {
-          try {
-            fs.unlinkSync(srcFile);
-          } catch {
-            /* ignore */
-          }
-          try {
-            fs.unlinkSync(binFile);
-          } catch {
-            /* ignore */
-          }
+          try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ }
         },
       };
     }

@@ -12,8 +12,8 @@ What it does (every install):
     1. Builds the standalone MCP server (npm install + tsc → dist/server.js)
     2. Registers the MCP server with the AI agents you select
        (claude-code / cursor / codex / gemini / opencode)
-    3. Initializes the SQLite databases under the data dir (default ~/.openclaw,
-       auto-created — works fine on machines without OpenClaw)
+    3. Initializes the SQLite databases under the data dir (default
+       ~/.context-cooler/data, auto-created — works on any machine)
 
 Optional (skipped automatically if the target files don't exist):
     4. Patches OpenClaw AGENTS.md / TOOLS.md / cron jobs to route data-heavy
@@ -217,8 +217,8 @@ BY PROCEEDING YOU ACKNOWLEDGE:
      While env vars are filtered and output is capped, you are responsible
      for reviewing what code your AI agents run through it.
   2. SQLite database files are created under the data directory (default
-     ~/.openclaw, override with --data-dir) to persist indexed data and
-     session state across conversations.
+     ~/.context-cooler/data, override with --data-dir) to persist indexed
+     data and session state across conversations.
   3. This software is provided "AS IS" under the MIT License, without
      warranty of any kind.
   4. iMessage delivery (macOS only) uses AppleScript to send messages.
@@ -337,7 +337,7 @@ def show_windows_post_install():
      ─────────────────────────────────
      iMessage delivery uses macOS AppleScript and is not available on
      Windows. You can still use Telegram, Slack, and Discord delivery
-     backends. Set up your tokens in ~/.openclaw/.env:
+     backends. Set up your tokens in ~/.context-cooler/data/.env:
        TELEGRAM_BOT_TOKEN=your_token
        TELEGRAM_CHAT_ID=your_chat_id
        SLACK_WEBHOOK_URL=https://hooks.slack.com/...

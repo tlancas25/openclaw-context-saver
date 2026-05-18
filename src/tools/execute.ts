@@ -6,7 +6,7 @@ import {
   parseArgvString,
 } from "../lib/sandbox";
 import { filterByIntent, filterByFields } from "../lib/filter";
-import { redactSecrets } from "../lib/redact";
+import { redactSecretsDetailed } from "../lib/redact";
 import { recordRun, indexContent } from "../lib/db";
 import { loadEnv } from "../lib/env";
 import { classify } from "../lib/exit-classify";
@@ -140,7 +140,13 @@ export async function handleExecute(args: ExecuteInput) {
     };
   }
 
-  const rawOutput = result.stdout;
+  // SECURITY: redact secrets BEFORE we derive the summary or index content.
+  // Previously redaction was applied only to the FTS5 index, leaving the
+  // in-flight response (the bytes the agent actually sees) unredacted.
+  // Now both paths consume the redacted text.
+  const { text: redactedOutput, hits: redactionHits } =
+    redactSecretsDetailed(result.stdout);
+  const rawOutput = redactedOutput;
   const rawBytes = Buffer.byteLength(rawOutput, "utf-8");
 
   // Try to parse as JSON for filtering
@@ -182,12 +188,11 @@ export async function handleExecute(args: ExecuteInput) {
     );
   }
 
-  // Index in FTS5 if output is substantial
+  // Index in FTS5 if output is substantial (already redacted above)
   if (rawBytes > 100) {
     const source = skillName || language;
     const label = commandStr || code.slice(0, 50);
-    const redacted = redactSecrets(rawOutput);
-    indexContent(source, label, redacted);
+    indexContent(source, label, rawOutput);
   }
 
   const response: Record<string, unknown> = {
@@ -213,6 +218,9 @@ export async function handleExecute(args: ExecuteInput) {
   response.bytes_saved = bytesSaved;
   response.savings_pct = Math.round(savingsPct * 10) / 10;
   response.indexed = rawBytes > 100;
+  if (redactionHits > 0) {
+    response.redacted_secrets = redactionHits;
+  }
 
   if (result.stderr) {
     response.stderr = result.stderr.slice(0, 500);

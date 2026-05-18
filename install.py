@@ -965,24 +965,33 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=dedent(f"""
         Examples:
-            {py_cmd} install.py                       # Install with defaults
+            {py_cmd} install.py                       # Install everywhere with defaults
             {py_cmd} install.py --update              # Pull latest + re-install
             {py_cmd} install.py --dry-run             # Preview changes
-            {py_cmd} install.py --uninstall           # Remove OpenClaw wiring
-            {py_cmd} install.py --data-dir /custom    # Custom data directory
+            {py_cmd} install.py --uninstall           # Remove integration wiring
+            {py_cmd} install.py --platform=claude-code,cursor   # Narrow to specific agents
+            {py_cmd} install.py --data-dir /custom    # Override data directory
             {py_cmd} install.py --verify              # Check status
         """),
     )
+    # --data-dir is the only path flag going forward. $OPENCLAW_HOME / the old
+    # --openclaw-home alias remain wired for back-compat but emit a deprecation
+    # notice (see the handler block below).
+    default_data_dir = Path(
+        os.environ.get("CONTEXT_COOLER_DATA")
+        or os.environ.get("OPENCLAW_HOME")
+        or (Path.home() / ".context-cooler" / "data")
+    )
     parser.add_argument(
         "--data-dir",
-        "--openclaw-home",
+        "--openclaw-home",  # deprecated alias — kept so old shell scripts don't break
         dest="data_dir",
         type=Path,
-        default=Path(os.environ.get("OPENCLAW_HOME", Path.home() / ".openclaw")),
-        help="Data directory for SQLite DBs (default: $OPENCLAW_HOME or ~/.openclaw, auto-created)",
+        default=default_data_dir,
+        help="Data directory for SQLite DBs (default: ~/.context-cooler/data, auto-created)",
     )
     parser.add_argument("--dry-run", action="store_true", help="Preview changes without writing")
-    parser.add_argument("--uninstall", action="store_true", help="Remove context-saver wiring")
+    parser.add_argument("--uninstall", action="store_true", help="Remove context-cooler wiring")
     parser.add_argument("--verify", action="store_true", help="Check installation status")
     parser.add_argument("--skip-cron", action="store_true", help="Skip cron job patching")
     parser.add_argument("--skip-agents", action="store_true", help="Skip AGENTS.md patching")
@@ -993,14 +1002,25 @@ def main():
         "--platform",
         action="append",
         choices=SUPPORTED_PLATFORMS + ["all"],
-        help="Target an AI coding agent (repeatable). Use 'all' to register everywhere. Default: prompt interactively, fall back to all in non-TTY.",
+        help="Restrict registration to specific AI agents (repeatable, e.g. --platform=claude-code --platform=cursor). Default: install for every supported platform.",
+    )
+    parser.add_argument(
+        "--select-platforms",
+        action="store_true",
+        help="Force the interactive platform picker (useful for first-time exploration). Default behaviour is non-interactive: install for all.",
     )
     parser.add_argument(
         "--non-interactive",
         action="store_true",
-        help="Skip every interactive prompt — use defaults (all platforms, default OpenClaw home).",
+        help=argparse.SUPPRESS,  # no-op: install is non-interactive by default since v5.2
     )
     args = parser.parse_args()
+
+    # Deprecation warnings for old flags / env vars
+    if "--openclaw-home" in sys.argv:
+        print("  [deprecation] --openclaw-home is renamed to --data-dir; the old flag still works.")
+    if os.environ.get("OPENCLAW_HOME") and not os.environ.get("CONTEXT_COOLER_DATA"):
+        print("  [deprecation] OPENCLAW_HOME is honoured for back-compat; prefer CONTEXT_COOLER_DATA going forward.")
 
     # ── Disclaimer screen (always shown first, except --verify) ──
     if not args.verify:
@@ -1018,10 +1038,13 @@ def main():
 
     openclaw_home = args.data_dir.expanduser().resolve()
 
-    # v4.6: confirm the install path interactively unless suppressed.
-    non_interactive = args.non_interactive or args.accept_disclaimer
-    if not args.verify and not args.uninstall:
-        openclaw_home = confirm_install_path(openclaw_home, non_interactive)
+    # v5.2: install is non-interactive by default. The data-dir path is taken
+    # as-is from the flag/env/default — no confirmation prompt. Operators who
+    # genuinely want to pick interactively can pass --select-platforms (which
+    # also re-enables the data-dir picker for symmetry).
+    non_interactive = not args.select_platforms
+    if args.select_platforms and not args.verify and not args.uninstall:
+        openclaw_home = confirm_install_path(openclaw_home, non_interactive=False)
 
     # Data directory: reused by the TS runtime to store stats.db / sessions.db.
     # We auto-create it so non-OpenClaw users (Claude Code, Cursor, etc.) install
@@ -1065,16 +1088,19 @@ def main():
     print(f"   Platform: {plat}")
     print(f"   Data dir: {openclaw_home}\n")
 
-    # v4.6: resolve which AI agent platforms we're registering with.
-    # CLI flags > interactive prompt > "all" default.
+    # v5.2: install is one-and-done — registers for every supported platform
+    # by default. Narrow with --platform=... if you only want a subset, or pass
+    # --select-platforms to get the old interactive picker back.
     if args.platform:
         platforms = (
             list(SUPPORTED_PLATFORMS)
             if "all" in args.platform
             else list(dict.fromkeys(args.platform))  # dedupe, preserve order
         )
+    elif args.select_platforms:
+        platforms = prompt_platforms(non_interactive=False)
     else:
-        platforms = prompt_platforms(non_interactive)
+        platforms = list(SUPPORTED_PLATFORMS)
 
     # OpenClaw integration is opt-in: detect by presence of workspace/AGENTS.md.
     # When absent, we skip the python-script copy and the *.md / cron patches.

@@ -309,13 +309,18 @@ export function findSkillScript(skillName: string): string | null {
     return null;
   }
 
-  const skillsDir = path.join(
-    process.env.OPENCLAW_HOME || path.join(os.homedir(), ".openclaw"),
-    "workspace",
-    "skills",
-    skillName,
-    "scripts"
-  );
+  // Honors $CONTEXT_COOLER_HOME (preferred) and $OPENCLAW_HOME (legacy),
+  // with the same fallback chain as lib/env.ts:getDataHome.
+  const home =
+    process.env.CONTEXT_COOLER_HOME ||
+    process.env.OPENCLAW_HOME ||
+    (fs.existsSync(path.join(os.homedir(), ".context-cooler"))
+      ? path.join(os.homedir(), ".context-cooler")
+      : fs.existsSync(path.join(os.homedir(), ".openclaw"))
+      ? path.join(os.homedir(), ".openclaw")
+      : path.join(os.homedir(), ".context-cooler"));
+
+  const skillsDir = path.join(home, "workspace", "skills", skillName, "scripts");
 
   if (!fs.existsSync(skillsDir)) return null;
 

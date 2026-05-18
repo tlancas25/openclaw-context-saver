@@ -5,7 +5,7 @@ Context Cooler — Automated Installer
 Usage:
     python3 install.py              # Build + register MCP server (works on any machine)
     python3 install.py --dry-run    # Preview changes without writing
-    python3 install.py --uninstall  # Remove OpenClaw integration wiring (if any)
+    python3 install.py --uninstall  # Remove agent-workspace integration wiring (if any)
     python3 install.py --data-dir /path/to/data  # Override data directory
 
 What it does (every install):
@@ -16,8 +16,8 @@ What it does (every install):
        ~/.context-cooler/data, auto-created — works on any machine)
 
 Optional (skipped automatically if the target files don't exist):
-    4. Patches OpenClaw AGENTS.md / TOOLS.md / cron jobs to route data-heavy
-       skills through context-cooler. Pure no-op for non-OpenClaw users.
+    4. Patches the agent workspace AGENTS.md / TOOLS.md / cron jobs to route data-heavy
+       skills through context-cooler. Pure no-op for users without an agent workspace.
 """
 
 import argparse
@@ -84,19 +84,19 @@ AGENTS_MD_PATCH = '''### 🪶 Context Saver Protocol — MANDATORY for Data-Heav
 
 **Single skill command:**
 ```bash
-python3 ~/.openclaw/workspace/skills/context-saver/scripts/ctx_run.py \\
+python3 ~/.context-cooler/workspace/skills/context-saver/scripts/ctx_run.py \\
   --skill <skill-name> --cmd "<command>" --fields "field1,field2,field3"
 ```
 
 **With intent filtering (smarter than field lists):**
 ```bash
-python3 ~/.openclaw/workspace/skills/context-saver/scripts/ctx_run.py \\
+python3 ~/.context-cooler/workspace/skills/context-saver/scripts/ctx_run.py \\
   --skill <skill-name> --cmd "<command>" --intent "find relevant items"
 ```
 
 **Multiple commands in one call (batch mode):**
 ```bash
-python3 ~/.openclaw/workspace/skills/context-saver/scripts/ctx_batch.py --commands '[
+python3 ~/.context-cooler/workspace/skills/context-saver/scripts/ctx_batch.py --commands '[
   {"skill": "skill-a", "cmd": "command1", "fields": ["field1","field2"]},
   {"skill": "skill-b", "cmd": "command2", "intent": "summary"},
   {"skill": "skill-c", "cmd": "command3", "intent": "top 5"}
@@ -136,7 +136,7 @@ python3 ~/.openclaw/workspace/skills/context-saver/scripts/ctx_batch.py --comman
 ```
 ❌ "Use alpaca-trader to get account and positions"
 ✅ "Use context-saver to wrap ALL data skill calls:
-    python3 ~/.openclaw/workspace/skills/context-saver/scripts/ctx_batch.py --commands '[
+    python3 ~/.context-cooler/workspace/skills/context-saver/scripts/ctx_batch.py --commands '[
       {"skill":"alpaca-trader","cmd":"account","fields":["equity","buying_power","cash"]},
       {"skill":"alpaca-trader","cmd":"positions","intent":"summary"}
     ]'"
@@ -173,18 +173,18 @@ TOOLS_MD_PATCH = '''## 🪶 Context Saver — Token Optimization Layer
 Quick reference:
 ```bash
 # Single command
-python3 ~/.openclaw/workspace/skills/context-saver/scripts/ctx_run.py \\
+python3 ~/.context-cooler/workspace/skills/context-saver/scripts/ctx_run.py \\
   --skill <skill-name> --cmd "<command>" --intent "<filter>"
 
 # Batch (multiple commands at once)
-python3 ~/.openclaw/workspace/skills/context-saver/scripts/ctx_batch.py \\
+python3 ~/.context-cooler/workspace/skills/context-saver/scripts/ctx_batch.py \\
   --commands '[{"skill":"...","cmd":"...","intent":"..."}]'
 
 # Search previously indexed data
-python3 ~/.openclaw/workspace/skills/context-saver/scripts/ctx_search.py "<query>"
+python3 ~/.context-cooler/workspace/skills/context-saver/scripts/ctx_search.py "<query>"
 
 # Check savings stats
-python3 ~/.openclaw/workspace/skills/context-saver/scripts/ctx_stats.py
+python3 ~/.context-cooler/workspace/skills/context-saver/scripts/ctx_stats.py
 ```
 
 **Wrap these skills:** alpaca-trader, analytics-engine, cost-tracker, x-analytics, x-search, health-monitor, plaid
@@ -367,9 +367,9 @@ def log(msg, level="INFO"):
     print(f"  {icons.get(level, '→')} {msg}")
 
 
-def install_scripts(openclaw_home: Path, dry_run: bool) -> bool:
+def install_scripts(data_home: Path, dry_run: bool) -> bool:
     """Copy or symlink context-saver scripts into the skills directory."""
-    skills_dir = openclaw_home / "workspace" / "skills" / "context-saver"
+    skills_dir = data_home / "workspace" / "skills" / "context-saver"
     source_dir = SCRIPT_DIR
 
     if skills_dir.resolve() == source_dir.resolve():
@@ -409,9 +409,9 @@ def install_scripts(openclaw_home: Path, dry_run: bool) -> bool:
     return True
 
 
-def init_databases(openclaw_home: Path, dry_run: bool) -> bool:
+def init_databases(data_home: Path, dry_run: bool) -> bool:
     """Create context/ directory and initialize SQLite databases."""
-    context_dir = openclaw_home / "context"
+    context_dir = data_home / "context"
 
     if dry_run:
         log(f"Would create {context_dir} and initialize databases", "DRY")
@@ -472,7 +472,7 @@ def init_databases(openclaw_home: Path, dry_run: bool) -> bool:
 def patch_file(filepath: Path, marker: str, patch: str, insert_before: str = None, dry_run: bool = False) -> bool:
     """Insert a patch block into a file if the marker isn't already present."""
     if not filepath.exists():
-        # Optional integration target — non-OpenClaw users won't have these.
+        # Optional integration target — users without an agent workspace won't have these.
         log(f"Not present, skipping: {filepath}", "SKIP")
         return True
 
@@ -502,9 +502,9 @@ def patch_file(filepath: Path, marker: str, patch: str, insert_before: str = Non
     return True
 
 
-def patch_agents_md(openclaw_home: Path, dry_run: bool) -> bool:
+def patch_agents_md(data_home: Path, dry_run: bool) -> bool:
     """Add Context Saver Protocol to AGENTS.md."""
-    agents_md = openclaw_home / "workspace" / "AGENTS.md"
+    agents_md = data_home / "workspace" / "AGENTS.md"
     return patch_file(
         agents_md,
         AGENTS_MD_MARKER,
@@ -514,9 +514,9 @@ def patch_agents_md(openclaw_home: Path, dry_run: bool) -> bool:
     )
 
 
-def patch_tools_md(openclaw_home: Path, dry_run: bool) -> bool:
+def patch_tools_md(data_home: Path, dry_run: bool) -> bool:
     """Add quick-reference section to TOOLS.md."""
-    tools_md = openclaw_home / "workspace" / "TOOLS.md"
+    tools_md = data_home / "workspace" / "TOOLS.md"
     return patch_file(
         tools_md,
         TOOLS_MD_MARKER,
@@ -525,9 +525,9 @@ def patch_tools_md(openclaw_home: Path, dry_run: bool) -> bool:
     )
 
 
-def patch_cron_jobs(openclaw_home: Path, dry_run: bool) -> bool:
+def patch_cron_jobs(data_home: Path, dry_run: bool) -> bool:
     """Patch existing cron jobs to route data-heavy skills through context-saver."""
-    jobs_file = openclaw_home / "cron" / "jobs.json"
+    jobs_file = data_home / "cron" / "jobs.json"
 
     if not jobs_file.exists():
         log("No cron/jobs.json found — skipping cron patching", "SKIP")
@@ -555,8 +555,8 @@ def patch_cron_jobs(openclaw_home: Path, dry_run: bool) -> bool:
         return True
 
     patched_count = 0
-    ctx_run_path = "~/.openclaw/workspace/skills/context-saver/scripts/ctx_run.py"
-    ctx_batch_path = "~/.openclaw/workspace/skills/context-saver/scripts/ctx_batch.py"
+    ctx_run_path = "~/.context-cooler/workspace/skills/context-saver/scripts/ctx_run.py"
+    ctx_batch_path = "~/.context-cooler/workspace/skills/context-saver/scripts/ctx_batch.py"
 
     for job in jobs:
         message = job.get("message", "")
@@ -831,12 +831,12 @@ def confirm_install_path(default_path: Path, non_interactive: bool) -> Path:
     return Path(answer).expanduser().resolve()
 
 
-def uninstall(openclaw_home: Path, dry_run: bool) -> bool:
+def uninstall(data_home: Path, dry_run: bool) -> bool:
     """Remove context-saver wiring from AGENTS.md, TOOLS.md, and cron jobs."""
     print("\n🗑️  Uninstalling Context Saver wiring...\n")
 
     # Remove from AGENTS.md
-    agents_md = openclaw_home / "workspace" / "AGENTS.md"
+    agents_md = data_home / "workspace" / "AGENTS.md"
     if agents_md.exists():
         content = agents_md.read_text()
         if AGENTS_MD_MARKER in content:
@@ -858,7 +858,7 @@ def uninstall(openclaw_home: Path, dry_run: bool) -> bool:
                 log("Removed Context Saver Protocol from AGENTS.md", "OK")
 
     # Remove from TOOLS.md
-    tools_md = openclaw_home / "workspace" / "TOOLS.md"
+    tools_md = data_home / "workspace" / "TOOLS.md"
     if tools_md.exists():
         content = tools_md.read_text()
         if TOOLS_MD_MARKER in content:
@@ -879,7 +879,7 @@ def uninstall(openclaw_home: Path, dry_run: bool) -> bool:
                 log("Removed Context Saver section from TOOLS.md", "OK")
 
     # Remove from cron jobs
-    jobs_file = openclaw_home / "cron" / "jobs.json"
+    jobs_file = data_home / "cron" / "jobs.json"
     if jobs_file.exists():
         try:
             raw = json.loads(jobs_file.read_text())
@@ -910,7 +910,7 @@ def uninstall(openclaw_home: Path, dry_run: bool) -> bool:
     return True
 
 
-def verify_installation(openclaw_home: Path) -> dict:
+def verify_installation(data_home: Path) -> dict:
     """Check installation status and return a report."""
     report = {}
 
@@ -930,24 +930,24 @@ def verify_installation(openclaw_home: Path) -> dict:
         report["mcp_registered"] = False
 
     # Check scripts
-    scripts_dir = openclaw_home / "workspace" / "skills" / "context-saver" / "scripts"
+    scripts_dir = data_home / "workspace" / "skills" / "context-saver" / "scripts"
     scripts = ["ctx_run.py", "ctx_batch.py", "ctx_search.py", "ctx_session.py", "ctx_stats.py"]
     report["python_scripts"] = all((scripts_dir / s).exists() for s in scripts)
 
     # Check databases
-    report["stats_db"] = (openclaw_home / "context" / "stats.db").exists()
-    report["sessions_db"] = (openclaw_home / "context" / "sessions.db").exists()
+    report["stats_db"] = (data_home / "context" / "stats.db").exists()
+    report["sessions_db"] = (data_home / "context" / "sessions.db").exists()
 
     # Check AGENTS.md
-    agents_md = openclaw_home / "workspace" / "AGENTS.md"
+    agents_md = data_home / "workspace" / "AGENTS.md"
     report["agents_md"] = agents_md.exists() and AGENTS_MD_MARKER in agents_md.read_text()
 
     # Check TOOLS.md
-    tools_md = openclaw_home / "workspace" / "TOOLS.md"
+    tools_md = data_home / "workspace" / "TOOLS.md"
     report["tools_md"] = tools_md.exists() and TOOLS_MD_MARKER in tools_md.read_text()
 
     # Check cron jobs
-    jobs_file = openclaw_home / "cron" / "jobs.json"
+    jobs_file = data_home / "cron" / "jobs.json"
     if jobs_file.exists():
         content = jobs_file.read_text()
         report["cron_jobs"] = "ctx_run" in content or "ctx_batch" in content or "context-saver" in content
@@ -978,7 +978,7 @@ def main():
     # --openclaw-home alias remain wired for back-compat but emit a deprecation
     # notice (see the handler block below).
     default_data_dir = Path(
-        os.environ.get("CONTEXT_COOLER_DATA")
+        os.environ.get("CONTEXT_COOLER_HOME")
         or os.environ.get("OPENCLAW_HOME")
         or (Path.home() / ".context-cooler" / "data")
     )
@@ -1019,8 +1019,8 @@ def main():
     # Deprecation warnings for old flags / env vars
     if "--openclaw-home" in sys.argv:
         print("  [deprecation] --openclaw-home is renamed to --data-dir; the old flag still works.")
-    if os.environ.get("OPENCLAW_HOME") and not os.environ.get("CONTEXT_COOLER_DATA"):
-        print("  [deprecation] OPENCLAW_HOME is honoured for back-compat; prefer CONTEXT_COOLER_DATA going forward.")
+    if os.environ.get("OPENCLAW_HOME") and not os.environ.get("CONTEXT_COOLER_HOME"):
+        print("  [deprecation] OPENCLAW_HOME is honoured for back-compat; prefer CONTEXT_COOLER_HOME going forward.")
 
     # ── Disclaimer screen (always shown first, except --verify) ──
     if not args.verify:
@@ -1036,7 +1036,7 @@ def main():
         if dist_dir.exists():
             shutil.rmtree(dist_dir)
 
-    openclaw_home = args.data_dir.expanduser().resolve()
+    data_home = args.data_dir.expanduser().resolve()
 
     # v5.2: install is non-interactive by default. The data-dir path is taken
     # as-is from the flag/env/default — no confirmation prompt. Operators who
@@ -1044,27 +1044,27 @@ def main():
     # also re-enables the data-dir picker for symmetry).
     non_interactive = not args.select_platforms
     if args.select_platforms and not args.verify and not args.uninstall:
-        openclaw_home = confirm_install_path(openclaw_home, non_interactive=False)
+        data_home = confirm_install_path(data_home, non_interactive=False)
 
     # Data directory: reused by the TS runtime to store stats.db / sessions.db.
-    # We auto-create it so non-OpenClaw users (Claude Code, Cursor, etc.) install
-    # cleanly. The default path stays ~/.openclaw for back-compat with existing
+    # We auto-create it so users without an agent workspace (Claude Code, Cursor, etc.) install
+    # cleanly. The default path stays ~/.context-cooler for back-compat with existing
     # OpenClaw installs that already point OPENCLAW_HOME there.
-    if not openclaw_home.exists():
+    if not data_home.exists():
         if args.dry_run:
-            print(f"  Would create data dir: {openclaw_home}")
+            print(f"  Would create data dir: {data_home}")
         else:
             try:
-                openclaw_home.mkdir(parents=True, exist_ok=True)
-                print(f"  Created data dir: {openclaw_home}")
+                data_home.mkdir(parents=True, exist_ok=True)
+                print(f"  Created data dir: {data_home}")
             except OSError as err:
-                print(f"  Could not create data dir {openclaw_home}: {err}")
+                print(f"  Could not create data dir {data_home}: {err}")
                 sys.exit(1)
 
     # Verify mode
     if args.verify:
-        print(f"\n🔍 Context Cooler Installation Status ({openclaw_home})\n")
-        report = verify_installation(openclaw_home)
+        print(f"\n🔍 Context Cooler Installation Status ({data_home})\n")
+        report = verify_installation(data_home)
         for key, status in report.items():
             icon = "✅" if status else ("⏭️" if status is None else "❌")
             print(f"  {icon} {key.replace('_', ' ').title()}")
@@ -1074,7 +1074,7 @@ def main():
 
     # Uninstall mode
     if args.uninstall:
-        uninstall(openclaw_home, args.dry_run)
+        uninstall(data_home, args.dry_run)
         if args.dry_run:
             print("\n🔍 Dry run complete. No files were modified.\n")
         else:
@@ -1086,7 +1086,7 @@ def main():
     plat = "Windows" if IS_WINDOWS else ("macOS" if IS_MACOS else ("Linux" if IS_LINUX else sys.platform))
     print(f"\n  Context Cooler Installer v{VERSION} [{mode}]")
     print(f"   Platform: {plat}")
-    print(f"   Data dir: {openclaw_home}\n")
+    print(f"   Data dir: {data_home}\n")
 
     # v5.2: install is one-and-done — registers for every supported platform
     # by default. Narrow with --platform=... if you only want a subset, or pass
@@ -1104,7 +1104,7 @@ def main():
 
     # OpenClaw integration is opt-in: detect by presence of workspace/AGENTS.md.
     # When absent, we skip the python-script copy and the *.md / cron patches.
-    has_openclaw_workspace = (openclaw_home / "workspace" / "AGENTS.md").exists()
+    has_agent_workspace = (data_home / "workspace" / "AGENTS.md").exists()
 
     steps = [
         ("Building MCP server", lambda: build_mcp_server(args.dry_run)),
@@ -1112,17 +1112,17 @@ def main():
             f"Registering MCP server ({', '.join(platforms) or 'none'})",
             lambda: register_mcp_server(args.dry_run, platforms),
         ),
-        ("Initializing databases", lambda: init_databases(openclaw_home, args.dry_run)),
+        ("Initializing databases", lambda: init_databases(data_home, args.dry_run)),
         ("Recording upgrade timestamp", lambda: record_last_upgrade(args.dry_run)),
     ]
-    if has_openclaw_workspace:
-        steps.insert(2, ("Installing scripts", lambda: install_scripts(openclaw_home, args.dry_run)))
+    if has_agent_workspace:
+        steps.insert(2, ("Installing scripts", lambda: install_scripts(data_home, args.dry_run)))
         if not args.skip_agents:
-            steps.append(("Patching AGENTS.md", lambda: patch_agents_md(openclaw_home, args.dry_run)))
+            steps.append(("Patching AGENTS.md", lambda: patch_agents_md(data_home, args.dry_run)))
         if not args.skip_tools:
-            steps.append(("Patching TOOLS.md", lambda: patch_tools_md(openclaw_home, args.dry_run)))
+            steps.append(("Patching TOOLS.md", lambda: patch_tools_md(data_home, args.dry_run)))
         if not args.skip_cron:
-            steps.append(("Patching cron jobs", lambda: patch_cron_jobs(openclaw_home, args.dry_run)))
+            steps.append(("Patching cron jobs", lambda: patch_cron_jobs(data_home, args.dry_run)))
 
     all_ok = True
     for label, fn in steps:
@@ -1140,7 +1140,7 @@ def main():
             show_windows_post_install()
         else:
             print("   Restart your AI agent (Claude Code, Cursor, etc.) to pick up the MCP server.\n")
-            # Legacy OpenClaw gateway hint, only relevant if it exists
+            # Legacy gateway hint, only relevant if it exists
             if (Path.home() / "Library" / "LaunchAgents" / "ai.openclaw.gateway.plist").exists():
                 print("   OpenClaw gateway detected — restart it too:")
                 print("   launchctl stop ai.openclaw.gateway && launchctl start ai.openclaw.gateway\n")

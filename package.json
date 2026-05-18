@@ -4,6 +4,7 @@
   "description": "Context Cooler \u2014 eliminate token burn with the coolest MCP on the net. Sandboxed execution in 11 languages, exit classification, FTS5 search, session continuity, multi-messenger delivery, and 5 platform adapters (Claude Code, Cursor, Codex, Gemini, OpenCode).",
   "main": "dist/server.js",
   "bin": {
+    "context-cooler": "dist/server.js",
     "openclaw-context-saver": "dist/server.js"
   },
   "scripts": {
@@ -16,12 +17,11 @@
     "context-window",
     "ai-agent",
     "token-optimization",
-    "openclaw",
     "claude",
     "cursor",
     "fts5"
   ],
-  "author": "OpenClaw",
+  "author": "tlancas25",
   "license": "MIT",
   "repository": {
     "type": "git",

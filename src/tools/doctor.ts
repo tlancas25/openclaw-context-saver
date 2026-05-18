@@ -3,7 +3,7 @@ import { execSync } from "child_process";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import { getOpenClawHome, getContextDir, isFtsEnabled } from "../lib/env";
+import { getDataHome, getContextDir, isFtsEnabled } from "../lib/env";
 import { getStatsDb, getSessionsDb } from "../lib/db";
 
 // v4.6: where install.py records the timestamp of the most recent install
@@ -43,20 +43,30 @@ function checkRuntime(name: string, cmd: string): Check {
 export async function handleDoctor(_args: DoctorInput) {
   const checks: Check[] = [];
 
-  // Check OPENCLAW_HOME
-  const home = getOpenClawHome();
+  // Data directory — auto-create if missing instead of failing. This is a
+  // recoverable condition (first install, manual cleanup), not a hard error.
+  const home = getDataHome();
   if (fs.existsSync(home)) {
     checks.push({
-      name: "OPENCLAW_HOME",
+      name: "Data directory",
       status: "ok",
       detail: home,
     });
   } else {
-    checks.push({
-      name: "OPENCLAW_HOME",
-      status: "fail",
-      detail: `${home} does not exist`,
-    });
+    try {
+      fs.mkdirSync(home, { recursive: true });
+      checks.push({
+        name: "Data directory",
+        status: "ok",
+        detail: `${home} (created)`,
+      });
+    } catch (err) {
+      checks.push({
+        name: "Data directory",
+        status: "fail",
+        detail: `${home} — could not create: ${err instanceof Error ? err.message : String(err)}`,
+      });
+    }
   }
 
   // Check context directory
@@ -184,7 +194,7 @@ export async function handleDoctor(_args: DoctorInput) {
     checks.push({
       name: "mcporter",
       status: "warn",
-      detail: "not installed (optional — for OpenClaw bridge)",
+      detail: "not installed (optional — for skill-execution bridge)",
     });
   }
 

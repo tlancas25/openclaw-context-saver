@@ -138,6 +138,106 @@ export async function executeShellCommand(
   return executeCode("shell", command, timeout, cwd);
 }
 
+/**
+ * Run an explicit argv vector — no shell, no interpolation, no metachar
+ * interpretation. Use this whenever the command line contains values that
+ * came from outside the server (skill names, agent-supplied args, etc.) so
+ * that prompt injection cannot escalate to command injection on the host.
+ */
+export async function executeArgv(
+  cmd: string,
+  args: string[],
+  timeout: number = DEFAULT_TIMEOUT,
+  cwd?: string
+): Promise<SandboxResult> {
+  const start = Date.now();
+  const env = sanitizeEnv();
+
+  return new Promise((resolve) => {
+    let stdout = "";
+    let stderr = "";
+    let timedOut = false;
+    let settled = false;
+
+    const proc = spawn(cmd, args, {
+      cwd: cwd || os.tmpdir(),
+      env,
+      stdio: ["ignore", "pipe", "pipe"],
+      detached: process.platform !== "win32",
+      shell: false,
+    });
+
+    const timer = setTimeout(() => {
+      timedOut = true;
+      if (proc.pid) {
+        try {
+          process.kill(-proc.pid, "SIGKILL");
+        } catch {
+          try { proc.kill("SIGKILL"); } catch { /* already dead */ }
+        }
+      }
+    }, timeout);
+
+    proc.stdout.on("data", (d: Buffer) => {
+      if (stdout.length < MAX_OUTPUT) stdout += d.toString();
+    });
+    proc.stderr.on("data", (d: Buffer) => {
+      if (stderr.length < MAX_OUTPUT) stderr += d.toString();
+    });
+
+    const finish = (exitCode: number | null) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve({
+        stdout: stdout.trim(),
+        stderr: stderr.trim(),
+        exitCode,
+        timedOut,
+        duration: Date.now() - start,
+      });
+    };
+
+    proc.on("close", (code) => finish(code));
+    proc.on("error", (err) => {
+      stderr += `\nSpawn error: ${err.message}`;
+      finish(1);
+    });
+  });
+}
+
+/**
+ * Split a CLI-style command string into argv tokens. Handles single and
+ * double-quoted segments and backslash escapes. Returns [] if the input is
+ * empty/whitespace. NOT a full POSIX parser — no variable expansion, no
+ * command substitution, no globbing. That's intentional: this is fed into
+ * spawn() with shell=false so metachars are never interpreted.
+ */
+export function parseArgvString(s: string): string[] {
+  const tokens: string[] = [];
+  let cur = "";
+  let quote: '"' | "'" | null = null;
+  let escape = false;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (escape) { cur += ch; escape = false; continue; }
+    if (ch === "\\" && quote !== "'") { escape = true; continue; }
+    if (quote) {
+      if (ch === quote) { quote = null; continue; }
+      cur += ch;
+      continue;
+    }
+    if (ch === '"' || ch === "'") { quote = ch as '"' | "'"; continue; }
+    if (/\s/.test(ch)) {
+      if (cur) { tokens.push(cur); cur = ""; }
+      continue;
+    }
+    cur += ch;
+  }
+  if (cur) tokens.push(cur);
+  return tokens;
+}
+
 interface CommandSpec {
   cmd: string;
   args: string[];

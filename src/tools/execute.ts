@@ -1,5 +1,10 @@
 import { z } from "zod";
-import { executeCode, findSkillScript, executeShellCommand } from "../lib/sandbox";
+import {
+  executeCode,
+  executeArgv,
+  findSkillScript,
+  parseArgvString,
+} from "../lib/sandbox";
 import { filterByIntent, filterByFields } from "../lib/filter";
 import { redactSecrets } from "../lib/redact";
 import { recordRun, indexContent } from "../lib/db";
@@ -54,7 +59,11 @@ export async function handleExecute(args: ExecuteInput) {
   let commandStr: string | undefined;
   let cwd: string | undefined;
 
-  // If skill is provided, build the command to execute
+  // If skill is provided, build the command to execute.
+  // SECURITY: skill args are parsed into a real argv vector and handed to
+  // spawn(shell:false). They are NEVER concatenated into a shell command.
+  // This blocks command injection via prompt-injected `cmd` values.
+  let result;
   if (args.skill) {
     skillName = args.skill;
     commandStr = args.cmd || "";
@@ -73,21 +82,23 @@ export async function handleExecute(args: ExecuteInput) {
       };
     }
 
-    // Verbose injection — get full data for filtering
-    const verboseCmd = commandStr.includes("--verbose")
-      ? commandStr
-      : `${commandStr} --verbose`;
+    const cmdArgs = parseArgvString(commandStr);
+    if (!cmdArgs.includes("--verbose")) cmdArgs.push("--verbose");
 
-    code = `python3 "${scriptPath}" ${verboseCmd}`;
-    language = "shell";
     cwd = scriptPath.substring(0, scriptPath.lastIndexOf("/scripts/"));
+    result = await executeArgv(
+      "python3",
+      [scriptPath, ...cmdArgs],
+      args.timeout,
+      cwd,
+    );
+  } else {
+    result = await executeCode(
+      language as SupportedLanguage,
+      code,
+      args.timeout
+    );
   }
-
-  const result = await executeCode(
-    language as SupportedLanguage,
-    code,
-    args.timeout
-  );
 
   // v4.6: classify exit into one of five buckets so MCP clients can
   // differentiate "timed out" from "language missing" from real errors.
